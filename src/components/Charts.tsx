@@ -15,6 +15,7 @@ import {
 } from "recharts";
 import { CATEGORY_META, CategoryIcon } from "@/components/Icons";
 import { rp } from "@/lib/format";
+import type { Period } from "@/lib/db";
 
 function useReducedMotion() {
   return useSyncExternalStore(
@@ -37,9 +38,11 @@ function compactRp(n: number) {
   return String(Math.round(n));
 }
 
-function shortDate(isoDay: string) {
-  const [y, m, d] = isoDay.split("-").map(Number);
-  if (!y || !m || !d) return isoDay;
+function formatPointLabel(raw: string) {
+  // Hourly label like "11:00"
+  if (/^\d{2}:\d{2}$/.test(raw)) return `${raw} WIB`;
+  const [y, m, d] = raw.split("-").map(Number);
+  if (!y || !m || !d) return raw;
   return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString("en-GB", {
     day: "2-digit",
     month: "short",
@@ -47,22 +50,43 @@ function shortDate(isoDay: string) {
   });
 }
 
-export function DailyChart({ data }: { data: { day: string; total: number }[] }) {
+function formatAxisTick(raw: string) {
+  if (/^\d{2}:\d{2}$/.test(raw)) return raw;
+  return formatPointLabel(raw);
+}
+
+export function DailyChart({
+  data,
+  period = "month",
+}: {
+  data: { day: string; total: number }[];
+  period?: Period;
+}) {
   const reducedMotion = useReducedMotion();
-  const activeDays = data.filter((d) => d.total > 0);
+  const activePoints = data.filter((d) => d.total > 0);
   const peak = data.reduce<{ day: string; total: number }>(
     (max, cur) => (cur.total > max.total ? cur : max),
     { day: "", total: 0 },
   );
 
-  if (!activeDays.length) {
+  const unitSingular = period === "day" ? "hour" : "day";
+  const unitPlural = period === "day" ? "hours" : "days";
+  const totalSlots = period === "day" ? 24 : period === "week" ? 7 : 30;
+  const emptyTitle =
+    period === "day"
+      ? "No spending recorded today yet"
+      : period === "week"
+        ? "No spending recorded in the last 7 days"
+        : "No spending recorded in the last 30 days";
+
+  if (!activePoints.length) {
     return (
       <div
         className="flex flex-1 flex-col items-center justify-center rounded-xl border border-dashed p-8 text-center"
         style={{ borderColor: "var(--border-strong)", color: "var(--text-secondary)" }}
       >
         <p className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
-          No spending recorded in the last 30 days
+          {emptyTitle}
         </p>
         <p className="mt-1.5 text-xs sm:text-sm">
           Send a message like <code className="font-mono font-semibold">kopi 18k</code> to your Telegram bot to start tracking.
@@ -78,11 +102,11 @@ export function DailyChart({ data }: { data: { day: string; total: number }[] })
         style={{ background: "var(--surface-subtle)", color: "var(--text-secondary)" }}
       >
         <span>
-          Active on{" "}
+          Active in{" "}
           <strong className="font-mono font-semibold" style={{ color: "var(--text-primary)" }}>
-            {activeDays.length}
+            {activePoints.length}
           </strong>{" "}
-          of 30 days
+          of {totalSlots} {unitPlural}
         </span>
         {peak.total > 0 && (
           <span>
@@ -90,7 +114,7 @@ export function DailyChart({ data }: { data: { day: string; total: number }[] })
             <strong className="font-mono font-semibold" style={{ color: "var(--text-primary)" }}>
               {rp(peak.total)}
             </strong>{" "}
-            ({shortDate(peak.day)})
+            ({formatPointLabel(peak.day)})
           </span>
         )}
       </div>
@@ -107,8 +131,8 @@ export function DailyChart({ data }: { data: { day: string; total: number }[] })
             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--chart-grid)" />
             <XAxis
               dataKey="day"
-              tickFormatter={(d: string) => shortDate(d)}
-              minTickGap={24}
+              tickFormatter={(d: string) => formatAxisTick(d)}
+              minTickGap={period === "week" ? 12 : 24}
               tickMargin={8}
               padding={{ left: 8, right: 12 }}
               tickLine={false}
@@ -125,7 +149,7 @@ export function DailyChart({ data }: { data: { day: string; total: number }[] })
             />
             <Tooltip
               formatter={(v) => [rp(Number(v ?? 0)), "Spent"]}
-              labelFormatter={(l) => shortDate(String(l ?? ""))}
+              labelFormatter={(l) => formatPointLabel(String(l ?? ""))}
               contentStyle={{
                 background: "var(--surface-elevated)",
                 border: "1px solid var(--border-strong)",
@@ -170,7 +194,10 @@ export function DailyChart({ data }: { data: { day: string; total: number }[] })
           className="focus-ring flex min-h-11 items-center justify-between rounded-xl px-4 py-2.5 font-medium"
           style={{ color: "var(--text-secondary)" }}
         >
-          <span>View daily table ({activeDays.length} active {activeDays.length === 1 ? "day" : "days"})</span>
+          <span>
+            View {period === "day" ? "hourly" : "daily"} table ({activePoints.length} active{" "}
+            {activePoints.length === 1 ? unitSingular : unitPlural})
+          </span>
           <span
             aria-hidden="true"
             className="rounded-md px-2 py-0.5 font-mono text-xs font-semibold"
@@ -183,14 +210,16 @@ export function DailyChart({ data }: { data: { day: string; total: number }[] })
           <table className="w-full border-collapse text-left">
             <thead>
               <tr style={{ borderBottom: "1px solid var(--border-subtle)", color: "var(--text-secondary)" }}>
-                <th scope="col" className="py-2 font-medium">Date</th>
+                <th scope="col" className="py-2 font-medium">
+                  {period === "day" ? "Hour (WIB)" : "Date"}
+                </th>
                 <th scope="col" className="py-2 text-right font-medium">Amount</th>
               </tr>
             </thead>
             <tbody>
-              {[...activeDays].reverse().map((row) => (
+              {[...activePoints].reverse().map((row) => (
                 <tr key={row.day} style={{ borderBottom: "1px solid var(--border-subtle)" }}>
-                  <td className="py-2 font-medium">{shortDate(row.day)}</td>
+                  <td className="py-2 font-medium">{formatPointLabel(row.day)}</td>
                   <td className="py-2 text-right font-mono font-semibold tabular-nums">{rp(row.total)}</td>
                 </tr>
               ))}
@@ -202,8 +231,22 @@ export function DailyChart({ data }: { data: { day: string; total: number }[] })
   );
 }
 
-export function CategoryChart({ data }: { data: { category: string; total: number }[] }) {
+export function CategoryChart({
+  data,
+  period = "month",
+}: {
+  data: { category: string; total: number }[];
+  period?: Period;
+}) {
   const reducedMotion = useReducedMotion();
+
+  const periodLabel = period === "day" ? "Today Total" : period === "week" ? "Week Total" : "Month Total";
+  const emptyLabel =
+    period === "day"
+      ? "No category breakdown for today yet"
+      : period === "week"
+        ? "No category breakdown for this week yet"
+        : "No category breakdown for this month yet";
 
   if (!data.length) {
     return (
@@ -212,7 +255,7 @@ export function CategoryChart({ data }: { data: { category: string; total: numbe
         style={{ borderColor: "var(--border-strong)", color: "var(--text-secondary)" }}
       >
         <p className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
-          No category breakdown for this month yet
+          {emptyLabel}
         </p>
         <p className="mt-1.5 text-xs sm:text-sm">
           Meals and expenses are automatically grouped into Food, Drink, Transport, Groceries, Bills, or Other.
@@ -264,7 +307,7 @@ export function CategoryChart({ data }: { data: { category: string; total: numbe
             className="text-[11px] font-semibold uppercase tracking-wider"
             style={{ color: "var(--text-secondary)" }}
           >
-            Month Total
+            {periodLabel}
           </span>
           <span className="mt-0.5 font-mono text-sm font-bold tabular-nums sm:text-base">
             {rp(grandTotal)}
