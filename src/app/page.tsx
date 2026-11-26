@@ -210,7 +210,8 @@ export default async function Home() {
               <strong className="font-semibold" style={{ color: "var(--text-primary)" }}>
                 Telegram Expense &amp; Nutrition AI:
               </strong>{" "}
-              send <code className="font-mono">geprek 22k</code> (or a meal photo + price) to log expense &amp; macros, or send a photo /{" "}
+              send <code className="font-mono">geprek 22k</code> (or a meal photo + caption) to log expense &amp; macros,{" "}
+              <code className="font-mono">/recalc 1</code> to recalculate an earlier meal, or{" "}
               <code className="font-mono">/nutri bakso</code> to check nutrition only.
             </p>
           </div>

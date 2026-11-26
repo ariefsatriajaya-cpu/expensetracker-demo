@@ -1,5 +1,10 @@
 export type Parsed = { name: string; amount: number };
 
+export type RecalcCommand = {
+  targetIndexOrId: number | null;
+  extraContext: string;
+};
+
 export function toAmount(tok: string): number | null {
   const t = tok.trim().toLowerCase().replace(/^rp\.?/, "");
   const m = t.match(/^(\d+(?:[.,]\d+)*)(k|rb|ribu|jt|juta)?$/);
@@ -41,7 +46,29 @@ export function parseNutritionQuery(text: string): string | null {
     const q = trimmed.slice(1).trim();
     return q || null;
   }
-  const m = trimmed.match(/^\/(?:nutri|nutrition|kalori|gizi)(?:@\S+)?(?:\s+(.+))?$/i);
+  const m = trimmed.match(/^\/(?:nutri|nutrition|kalori|gizi)(?:@\S+)?(?:\s+([\s\S]+))?$/i);
   if (!m) return null;
   return (m[1] ?? "").trim();
+}
+
+export function parseRecalcCommand(text: string): RecalcCommand | null {
+  const trimmed = text.trim();
+  const m = trimmed.match(/^\/(?:recalc|recalculate|hitung)(?:@\S+)?(?:\s+([\s\S]+))?$/i);
+  if (!m) return null;
+  const arg = (m[1] ?? "").trim();
+  if (!arg) {
+    return { targetIndexOrId: null, extraContext: "" };
+  }
+  const numMatch = arg.match(/^#?(\d+)(?:\s+([\s\S]+))?$/);
+  if (numMatch) {
+    const num = parseInt(numMatch[1], 10);
+    return {
+      targetIndexOrId: num > 0 ? num : null,
+      extraContext: (numMatch[2] ?? "").trim(),
+    };
+  }
+  return {
+    targetIndexOrId: null,
+    extraContext: arg,
+  };
 }

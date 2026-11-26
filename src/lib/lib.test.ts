@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseAmountOnly, parseExpense, parseNutritionQuery } from "./parse";
+import { parseAmountOnly, parseExpense, parseNutritionQuery, parseRecalcCommand } from "./parse";
 import { categorize } from "./categorize";
 import { signSession, verifySession } from "./session";
 import { formatNutritionBlock } from "./nutrition";
@@ -20,7 +20,7 @@ describe("parseExpense", () => {
   });
 });
 
-describe("parseAmountOnly & parseNutritionQuery", () => {
+describe("parseAmountOnly, parseNutritionQuery & parseRecalcCommand", () => {
   it("parses standalone price captions for photos", () => {
     expect(parseAmountOnly("25k")).toBe(25000);
     expect(parseAmountOnly("Rp22.000")).toBe(22000);
@@ -32,6 +32,20 @@ describe("parseAmountOnly & parseNutritionQuery", () => {
     expect(parseNutritionQuery("? indomie telur")).toBe("indomie telur");
     expect(parseNutritionQuery("/nutri")).toBe("");
     expect(parseNutritionQuery("nasi goreng 25k")).toBeNull();
+  });
+
+  it("parses /recalc commands with optional item index and extra context", () => {
+    expect(parseRecalcCommand("/recalc")).toEqual({ targetIndexOrId: null, extraContext: "" });
+    expect(parseRecalcCommand("/recalc 1")).toEqual({ targetIndexOrId: 1, extraContext: "" });
+    expect(parseRecalcCommand("/recalc #2 nasi setengah porsi, dada ayam")).toEqual({
+      targetIndexOrId: 2,
+      extraContext: "nasi setengah porsi, dada ayam",
+    });
+    expect(parseRecalcCommand("/recalc geprek tanpa nasi")).toEqual({
+      targetIndexOrId: null,
+      extraContext: "geprek tanpa nasi",
+    });
+    expect(parseRecalcCommand("nasi goreng 25k")).toBeNull();
   });
 
   it("formats nutrition macro block", () => {

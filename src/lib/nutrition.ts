@@ -27,11 +27,15 @@ function validCategory(c: unknown, fallbackName: string): Category {
 
 export async function analyzeExpenseOrFood(input: {
   description?: string;
+  extraNotes?: string;
   image?: { base64: string; mimeType: string } | null;
   forceFoodAnalysis?: boolean;
 }): Promise<NutritionAIResult> {
   const rawName = (input.description ?? "").trim();
-  const fallbackCat = categorize(rawName || "meal");
+  const extraNotes = (input.extraNotes ?? "").trim();
+  const combinedText = [rawName, extraNotes].filter(Boolean).join(" — ");
+
+  const fallbackCat = categorize(combinedText || "meal");
   const fallbackResult: NutritionAIResult = {
     dishName: rawName || "Meal",
     category: fallbackCat,
@@ -50,25 +54,42 @@ export async function analyzeExpenseOrFood(input: {
   if (!apiKey) {
     return {
       ...fallbackResult,
-      errorReason: "GEMINI_API_KEY is not set in this deployment. If you just added it in Vercel, trigger a Redeploy (and open your main .vercel.app domain, not an older preview URL).",
+      errorReason:
+        "GEMINI_API_KEY is not set in this deployment. If you just added it in Vercel, trigger a Redeploy (and open your main .vercel.app domain, not an older preview URL).",
     };
   }
 
+  const inputContextLines = [
+    rawName ? `User text input / item name: "${rawName}"` : null,
+    extraNotes ? `Additional user instructions / portion adjustments: "${extraNotes}"` : null,
+    input.image
+      ? "Attached photo: Inspect the image carefully for the exact food/drink items, visible portion sizes (e.g. rice volume, protein cut, fried/grilled, sauces/oil, side dishes), and combine what you see in the photo with the user's text input above."
+      : null,
+  ]
+    .filter(Boolean)
+    .join("\n");
+
   const prompt = `You are a certified nutritionist and personal finance assistant specialized in Indonesian and international meals.
-Analyze the provided ${input.image ? "photo and/or text" : "text"}: "${rawName || "(see attached photo)"}"
+Analyze the following input:
+${inputContextLines || 'User text input: "(see attached photo)"'}
+
+IMPORTANT RULES WHEN BOTH TEXT AND PHOTO ARE PROVIDED:
+1. Combine BOTH sources of information: use the photo to identify exact visible dishes, portion sizes, side dishes, and cooking method, AND honor the user's text input for specific adjustments or context (such as "nasi setengah porsi", "tanpa nasi", "dada ayam", "less sugar", or custom descriptions).
+2. If the user provided a generic label (e.g. "makan siang", "sarapan", "dinner") along with a photo, keep their label and append the detected dish in parentheses for "dishName", e.g. "makan siang (Ayam Geprek + Nasi)". If they already named the dish, keep their dishName.
+3. In "nutrition_note", explicitly mention the portion & components analyzed from the input + photo (in Indonesian, max 110 chars).
 
 Return ONLY a valid JSON object with these exact fields:
 {
-  "dishName": "concise meal or item name (if text was provided like 'makan di polsek, geprek', keep or clean it; if only a photo was given, name the specific dish accurately, e.g. 'Ayam Geprek + Nasi')",
+  "dishName": "concise meal or item name",
   "category": "one of: Food, Drink, Transport, Groceries, Bills, Other",
   "isFoodOrDrink": true or false (true if the item is edible food, meal, snack, beverage, or edible groceries; false for transport, fuel, bills, non-food items),
-  "calories": integer total estimated kilocalories (kcal) for 1 typical serving, or null if isFoodOrDrink is false,
+  "calories": integer total estimated kilocalories (kcal) for the described & pictured serving, or null if isFoodOrDrink is false,
   "protein_g": number grams of protein (1 decimal place), or null if isFoodOrDrink is false,
   "carbs_g": number grams of carbohydrates (1 decimal place), or null if isFoodOrDrink is false,
   "fat_g": number grams of fat (1 decimal place), or null if isFoodOrDrink is false,
-  "nutrition_note": "short 1-line summary (max 90 chars) of portion estimate & key nutritional highlight (e.g. '1 porsi (~320g): tinggi protein dari ayam, lemak cukup tinggi dari sambal minyak'), or null if isFoodOrDrink is false"
+  "nutrition_note": "short 1-line summary (max 110 chars) of portion estimate & key nutritional highlight based on the text and/or photo, or null if isFoodOrDrink is false"
 }
-${input.forceFoodAnalysis ? "Note: The user is explicitly asking for a nutritional breakdown of this item/photo, so set isFoodOrDrink to true if it is any kind of food or drink." : ""}`;
+${input.forceFoodAnalysis ? "Note: The user is explicitly asking for a nutritional calculation/recalculation, so set isFoodOrDrink to true if it is any kind of food or drink." : ""}`;
 
   const parts: Array<Record<string, unknown>> = [{ text: prompt }];
   if (input.image) {
@@ -115,8 +136,9 @@ ${input.forceFoodAnalysis ? "Note: The user is explicitly asking for a nutrition
     if (!textOut) return fallbackResult;
 
     const parsed = JSON.parse(textOut) as Record<string, unknown>;
-    const dishName = String(parsed.dishName ?? "").trim() || rawName || "Meal";
-    const category = validCategory(parsed.category, rawName || dishName);
+    const aiDishName = String(parsed.dishName ?? "").trim();
+    const dishName = aiDishName || rawName || "Meal";
+    const category = validCategory(parsed.category, combinedText || dishName);
     const isFoodOrDrink = Boolean(parsed.isFoodOrDrink) || category === "Food" || category === "Drink";
 
     const calories = isFoodOrDrink ? cleanNumber(parsed.calories, true) : null;
@@ -127,7 +149,8 @@ ${input.forceFoodAnalysis ? "Note: The user is explicitly asking for a nutrition
       isFoodOrDrink && parsed.nutrition_note ? String(parsed.nutrition_note).trim().slice(0, 140) : null;
 
     return {
-      dishName: rawName || dishName,
+      // If a photo was included, allow Gemini's enriched dishName (e.g. when caption was generic or price-only); otherwise preserve user's rawName
+      dishName: input.image ? dishName : rawName || dishName,
       category,
       isFoodOrDrink,
       nutrition: {
