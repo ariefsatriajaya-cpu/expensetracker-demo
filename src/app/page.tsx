@@ -1,8 +1,9 @@
-import { byCategory, byDay, listRecent, totals } from "@/lib/db";
+import { byCategory, byDay, listRecent, nutritionTotals, totals } from "@/lib/db";
 import { rp } from "@/lib/format";
 import { CategoryChart, DailyChart } from "@/components/Charts";
 import {
   CalendarIcon,
+  FlameIcon,
   LogOutIcon,
   PieChartIcon,
   SendIcon,
@@ -14,11 +15,12 @@ import RecentList from "@/components/RecentList";
 export const dynamic = "force-dynamic";
 
 export default async function Home() {
-  const [t, days, cats, recent] = await Promise.all([
+  const [t, days, cats, recent, nutri] = await Promise.all([
     totals(),
     byDay(30),
     byCategory(),
     listRecent(50),
+    nutritionTotals(),
   ]);
 
   const nowJakarta = new Date().toLocaleDateString("en-GB", {
@@ -64,7 +66,7 @@ export default async function Home() {
             </div>
             <div className="min-w-0">
               <h1 className="truncate text-base font-bold tracking-tight sm:text-lg">
-                Expense Tracker
+                Expense &amp; Nutrition Tracker
               </h1>
               <p className="flex items-center gap-1.5 text-xs" style={{ color: "var(--text-secondary)" }}>
                 <CalendarIcon className="h-3.5 w-3.5 shrink-0" />
@@ -94,10 +96,10 @@ export default async function Home() {
         id="main-content"
         className="mx-auto w-full max-w-5xl space-y-6 px-4 pt-5 sm:px-6 sm:pt-7"
       >
-        {/* Bento Summary Cards */}
-        <section aria-label="Spending summary" className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-3">
+        {/* Bento Summary Cards: Spending + Today's Nutrition */}
+        <section aria-label="Spending and nutrition summary" className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
           <div
-            className="glass-card col-span-2 rounded-2xl p-5 sm:p-6 lg:col-span-1"
+            className="glass-card col-span-2 rounded-2xl p-5 lg:col-span-1"
             style={{
               borderColor: "var(--border-strong)",
             }}
@@ -107,13 +109,13 @@ export default async function Home() {
                 This Month
               </p>
               <span
-                className="rounded-lg px-2.5 py-1 font-mono text-xs font-medium tabular-nums"
+                className="rounded-lg px-2 py-0.5 font-mono text-xs font-medium tabular-nums"
                 style={{ background: "var(--accent-soft)", color: "var(--accent-text)" }}
               >
                 ~{rp(dailyAvg)}/day
               </span>
             </div>
-            <p className="mt-2 font-mono text-2xl font-bold tracking-tight tabular-nums sm:text-3xl">
+            <p className="mt-2 font-mono text-2xl font-bold tracking-tight tabular-nums">
               {rp(t.month)}
             </p>
             <p className="mt-1.5 text-xs" style={{ color: "var(--text-secondary)" }}>
@@ -144,6 +146,51 @@ export default async function Home() {
               Mon – Sun
             </p>
           </div>
+
+          {/* Today's Nutrition Card */}
+          <div
+            className="glass-card col-span-2 rounded-2xl p-4 sm:p-5 lg:col-span-1"
+            style={{ borderColor: "var(--border-strong)" }}
+          >
+            <div className="flex items-center justify-between gap-2">
+              <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--cat-groceries-fg)" }}>
+                <FlameIcon className="h-3.5 w-3.5" />
+                <span>Today&apos;s Nutrition</span>
+              </p>
+              <span
+                className="rounded-lg px-2 py-0.5 font-mono text-[11px] font-medium tabular-nums"
+                style={{ background: "var(--cat-groceries-bg)", color: "var(--cat-groceries-fg)" }}
+              >
+                {nutri.todayLoggedItems} {nutri.todayLoggedItems === 1 ? "meal" : "meals"}
+              </span>
+            </div>
+            <p className="mt-2 font-mono text-xl font-bold tracking-tight tabular-nums sm:text-2xl">
+              {nutri.todayCalories.toLocaleString("id-ID")}{" "}
+              <span className="text-xs font-semibold uppercase" style={{ color: "var(--text-secondary)" }}>
+                kcal
+              </span>
+            </p>
+            <div className="mt-2 flex flex-wrap items-center gap-1.5 font-mono text-[11px] font-medium tabular-nums">
+              <span
+                className="rounded-md px-1.5 py-0.5"
+                style={{ background: "var(--surface-subtle)", color: "var(--text-primary)" }}
+              >
+                P {nutri.todayProtein}g
+              </span>
+              <span
+                className="rounded-md px-1.5 py-0.5"
+                style={{ background: "var(--surface-subtle)", color: "var(--text-primary)" }}
+              >
+                C {nutri.todayCarbs}g
+              </span>
+              <span
+                className="rounded-md px-1.5 py-0.5"
+                style={{ background: "var(--surface-subtle)", color: "var(--text-primary)" }}
+              >
+                F {nutri.todayFat}g
+              </span>
+            </div>
+          </div>
         </section>
 
         {/* Telegram Quick Command Banner */}
@@ -160,10 +207,10 @@ export default async function Home() {
             </div>
             <p className="text-xs sm:text-sm" style={{ color: "var(--text-secondary)" }}>
               <strong className="font-semibold" style={{ color: "var(--text-primary)" }}>
-                Quick log via Telegram:
+                Telegram Expense &amp; Nutrition AI:
               </strong>{" "}
-              send <code className="font-mono">kopi susu 18k</code>, <code className="font-mono">/today</code>, or{" "}
-              <code className="font-mono">/undo</code>.
+              send <code className="font-mono">geprek 22k</code> (or a meal photo + price) to log expense &amp; macros, or send a photo /{" "}
+              <code className="font-mono">/nutri bakso</code> to check nutrition only.
             </p>
           </div>
         </section>
@@ -215,9 +262,9 @@ export default async function Home() {
         <section className="glass-card rounded-2xl p-5 sm:p-6">
           <div className="mb-4 flex items-baseline justify-between gap-2">
             <div>
-              <h2 className="text-base font-bold">Recent Expenses</h2>
+              <h2 className="text-base font-bold">Recent Expenses &amp; Nutrition</h2>
               <p className="text-xs" style={{ color: "var(--text-secondary)" }}>
-                Latest {recent.length} entries · tap edit or delete to adjust
+                Latest {recent.length} entries · food expenses include AI calorie &amp; macro facts
               </p>
             </div>
           </div>

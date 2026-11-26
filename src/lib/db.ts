@@ -1,6 +1,20 @@
 import { neon } from "@neondatabase/serverless";
 
-export type Expense = { id: number; name: string; amount: number; category: string; created_at: string };
+export type NutritionFacts = {
+  calories: number | null;
+  protein_g: number | null;
+  carbs_g: number | null;
+  fat_g: number | null;
+  nutrition_note: string | null;
+};
+
+export type Expense = {
+  id: number;
+  name: string;
+  amount: number;
+  category: string;
+  created_at: string;
+} & NutritionFacts;
 
 const TZ = "Asia/Jakarta";
 let initPromise: Promise<unknown> | null = null;
@@ -10,18 +24,33 @@ function sql() {
 }
 
 function init() {
-  initPromise ??= sql()`CREATE TABLE IF NOT EXISTS expenses (
-    id serial PRIMARY KEY,
-    name text NOT NULL,
-    amount bigint NOT NULL,
-    category text NOT NULL,
-    created_at timestamptz NOT NULL DEFAULT now()
-  )`.catch((e) => {
+  initPromise ??= (async () => {
+    const db = sql();
+    await db`CREATE TABLE IF NOT EXISTS expenses (
+      id serial PRIMARY KEY,
+      name text NOT NULL,
+      amount bigint NOT NULL,
+      category text NOT NULL,
+      created_at timestamptz NOT NULL DEFAULT now()
+    )`;
+    await db`ALTER TABLE expenses
+      ADD COLUMN IF NOT EXISTS calories integer,
+      ADD COLUMN IF NOT EXISTS protein_g numeric(6,1),
+      ADD COLUMN IF NOT EXISTS carbs_g numeric(6,1),
+      ADD COLUMN IF NOT EXISTS fat_g numeric(6,1),
+      ADD COLUMN IF NOT EXISTS nutrition_note text`;
+  })().catch((e) => {
     initPromise = null;
     throw e;
   });
   return initPromise;
 }
+
+const numOrNull = (v: unknown): number | null => {
+  if (v === null || v === undefined || v === "") return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+};
 
 const fix = (r: Record<string, unknown>): Expense => ({
   id: Number(r.id),
@@ -29,12 +58,35 @@ const fix = (r: Record<string, unknown>): Expense => ({
   amount: Number(r.amount),
   category: String(r.category),
   created_at: new Date(r.created_at as string).toISOString(),
+  calories: numOrNull(r.calories),
+  protein_g: numOrNull(r.protein_g),
+  carbs_g: numOrNull(r.carbs_g),
+  fat_g: numOrNull(r.fat_g),
+  nutrition_note: r.nutrition_note ? String(r.nutrition_note) : null,
 });
 
-export async function addExpense(name: string, amount: number, category: string) {
+export async function addExpense(
+  name: string,
+  amount: number,
+  category: string,
+  nutrition?: Partial<NutritionFacts>,
+) {
   await init();
-  const r = await sql()`INSERT INTO expenses(name, amount, category) VALUES (${name}, ${amount}, ${category}) RETURNING *`;
+  const cal = nutrition?.calories ?? null;
+  const pro = nutrition?.protein_g ?? null;
+  const carb = nutrition?.carbs_g ?? null;
+  const fat = nutrition?.fat_g ?? null;
+  const note = nutrition?.nutrition_note ?? null;
+  const r = await sql()`INSERT INTO expenses(name, amount, category, calories, protein_g, carbs_g, fat_g, nutrition_note)
+    VALUES (${name}, ${amount}, ${category}, ${cal}, ${pro}, ${carb}, ${fat}, ${note})
+    RETURNING *`;
   return fix(r[0]);
+}
+
+export async function getExpenseById(id: number) {
+  await init();
+  const r = await sql()`SELECT * FROM expenses WHERE id = ${id} LIMIT 1`;
+  return r[0] ? fix(r[0]) : null;
 }
 
 export async function undoLast() {
@@ -48,9 +100,29 @@ export async function removeExpense(id: number) {
   await sql()`DELETE FROM expenses WHERE id = ${id}`;
 }
 
-export async function updateExpense(id: number, name: string, amount: number, category: string) {
+export async function updateExpense(
+  id: number,
+  name: string,
+  amount: number,
+  category: string,
+  nutrition?: Partial<NutritionFacts>,
+) {
   await init();
-  await sql()`UPDATE expenses SET name = ${name}, amount = ${amount}, category = ${category} WHERE id = ${id}`;
+  if (nutrition !== undefined) {
+    const cal = nutrition.calories ?? null;
+    const pro = nutrition.protein_g ?? null;
+    const carb = nutrition.carbs_g ?? null;
+    const fat = nutrition.fat_g ?? null;
+    const note = nutrition.nutrition_note ?? null;
+    const r = await sql()`UPDATE expenses
+      SET name = ${name}, amount = ${amount}, category = ${category},
+          calories = ${cal}, protein_g = ${pro}, carbs_g = ${carb}, fat_g = ${fat}, nutrition_note = ${note}
+      WHERE id = ${id}
+      RETURNING *`;
+    return r[0] ? fix(r[0]) : null;
+  }
+  const r = await sql()`UPDATE expenses SET name = ${name}, amount = ${amount}, category = ${category} WHERE id = ${id} RETURNING *`;
+  return r[0] ? fix(r[0]) : null;
 }
 
 export async function listRecent(limit = 50) {
@@ -75,6 +147,31 @@ export async function totals() {
     COALESCE(SUM(amount) FILTER (WHERE d >= date_trunc('month', today::timestamp)::date), 0) AS month
     FROM (SELECT amount, (created_at AT TIME ZONE ${TZ})::date AS d, (now() AT TIME ZONE ${TZ})::date AS today FROM expenses) t`;
   return { today: Number(r[0].today), week: Number(r[0].week), month: Number(r[0].month) };
+}
+
+export async function nutritionTotals() {
+  await init();
+  const r = await sql()`SELECT
+    COALESCE(SUM(calories) FILTER (WHERE d = today), 0) AS today_calories,
+    COALESCE(SUM(protein_g) FILTER (WHERE d = today), 0) AS today_protein,
+    COALESCE(SUM(carbs_g) FILTER (WHERE d = today), 0) AS today_carbs,
+    COALESCE(SUM(fat_g) FILTER (WHERE d = today), 0) AS today_fat,
+    COUNT(*) FILTER (WHERE d = today AND calories IS NOT NULL) AS today_logged_items,
+    COALESCE(SUM(calories) FILTER (WHERE d >= date_trunc('month', today::timestamp)::date), 0) AS month_calories
+    FROM (
+      SELECT calories, protein_g, carbs_g, fat_g,
+             (created_at AT TIME ZONE ${TZ})::date AS d,
+             (now() AT TIME ZONE ${TZ})::date AS today
+      FROM expenses
+    ) t`;
+  return {
+    todayCalories: Math.round(Number(r[0].today_calories)),
+    todayProtein: Math.round(Number(r[0].today_protein) * 10) / 10,
+    todayCarbs: Math.round(Number(r[0].today_carbs) * 10) / 10,
+    todayFat: Math.round(Number(r[0].today_fat) * 10) / 10,
+    todayLoggedItems: Number(r[0].today_logged_items),
+    monthCalories: Math.round(Number(r[0].month_calories)),
+  };
 }
 
 export async function byDay(days = 30) {

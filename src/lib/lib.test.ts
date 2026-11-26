@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { parseExpense } from "./parse";
+import { parseAmountOnly, parseExpense, parseNutritionQuery } from "./parse";
 import { categorize } from "./categorize";
 import { signSession, verifySession } from "./session";
+import { formatNutritionBlock } from "./nutrition";
 
 describe("parseExpense", () => {
   it.each([
@@ -16,6 +17,33 @@ describe("parseExpense", () => {
   });
   it.each(["hello", "nasi goreng", "nasi 0", "nasi 1.5", "25000"])("rejects %s", (t) => {
     expect(parseExpense(t)).toBeNull();
+  });
+});
+
+describe("parseAmountOnly & parseNutritionQuery", () => {
+  it("parses standalone price captions for photos", () => {
+    expect(parseAmountOnly("25k")).toBe(25000);
+    expect(parseAmountOnly("Rp22.000")).toBe(22000);
+    expect(parseAmountOnly("geprek 22k")).toBeNull();
+  });
+
+  it("parses standalone nutrition commands", () => {
+    expect(parseNutritionQuery("/nutri nasi padang")).toBe("nasi padang");
+    expect(parseNutritionQuery("? indomie telur")).toBe("indomie telur");
+    expect(parseNutritionQuery("/nutri")).toBe("");
+    expect(parseNutritionQuery("nasi goreng 25k")).toBeNull();
+  });
+
+  it("formats nutrition macro block", () => {
+    expect(
+      formatNutritionBlock({
+        calories: 650,
+        protein_g: 32,
+        carbs_g: 68,
+        fat_g: 24,
+        nutrition_note: "High protein",
+      }),
+    ).toContain("650 kcal");
   });
 });
 

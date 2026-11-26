@@ -1,7 +1,7 @@
 export type Parsed = { name: string; amount: number };
 
-function toAmount(tok: string): number | null {
-  const t = tok.toLowerCase().replace(/^rp\.?/, "");
+export function toAmount(tok: string): number | null {
+  const t = tok.trim().toLowerCase().replace(/^rp\.?/, "");
   const m = t.match(/^(\d+(?:[.,]\d+)*)(k|rb|ribu|jt|juta)?$/);
   if (!m) return null;
   let num = m[1];
@@ -27,4 +27,21 @@ export function parseExpense(text: string): Parsed | null {
   const name = parts.slice(0, -1).join(" ").trim();
   if (!name) return null;
   return { name, amount };
+}
+
+export function parseAmountOnly(text: string): number | null {
+  const trimmed = text.trim();
+  if (!trimmed || /\s/.test(trimmed)) return null;
+  return toAmount(trimmed);
+}
+
+export function parseNutritionQuery(text: string): string | null {
+  const trimmed = text.trim();
+  if (trimmed.startsWith("?")) {
+    const q = trimmed.slice(1).trim();
+    return q || null;
+  }
+  const m = trimmed.match(/^\/(?:nutri|nutrition|kalori|gizi)(?:@\S+)?(?:\s+(.+))?$/i);
+  if (!m) return null;
+  return (m[1] ?? "").trim();
 }
