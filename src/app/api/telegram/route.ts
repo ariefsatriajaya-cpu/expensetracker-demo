@@ -1,10 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
-import { addExpense, listToday, totals, undoLast } from "@/lib/db";
+import { addExpense, listToday, undoLast } from "@/lib/db";
 import { parseExpense } from "@/lib/parse";
 import { categorize } from "@/lib/categorize";
 import { rp } from "@/lib/format";
 import { sendMessage } from "@/lib/telegram";
 import { safeEqual } from "@/lib/session";
+
+async function formatTodaySummary() {
+  const items = await listToday();
+  if (!items.length) return "📅 Today's expenses: none\n💰 Today's total: Rp0";
+  const total = items.reduce((s, e) => s + e.amount, 0);
+  const lines = items.map((e, i) => `${i + 1}. ${e.name} – ${rp(e.amount)} (${e.category})`).join("\n");
+  return `📅 Today's expenses (${items.length}):\n${lines}\n\n💰 Today's total: ${rp(total)}`;
+}
 
 export async function POST(req: NextRequest) {
   const secret = (process.env.TELEGRAM_WEBHOOK_SECRET ?? "").trim();
@@ -28,21 +36,17 @@ export async function POST(req: NextRequest) {
     if (text.startsWith("/undo")) {
       const e = await undoLast();
       if (e) {
-        const t = await totals();
+        const summary = await formatTodaySummary();
         sent = await sendMessage(
           chat,
-          `↩️ Removed ${e.name} – ${rp(e.amount)}\n📅 Today's total: ${rp(t.today)}`,
+          `↩️ Removed ${e.name} – ${rp(e.amount)}\n\n${summary}`,
         );
       } else {
         sent = await sendMessage(chat, "Nothing to undo.");
       }
     } else if (text.startsWith("/today")) {
-      const items = await listToday();
-      const total = items.reduce((s, e) => s + e.amount, 0);
-      sent = await sendMessage(
-        chat,
-        items.length ? items.map((e) => `• ${e.name} – ${rp(e.amount)}`).join("\n") + `\n\n📅 Today's total: ${rp(total)}` : "No expenses today.",
-      );
+      const summary = await formatTodaySummary();
+      sent = await sendMessage(chat, summary);
     } else if (text.startsWith("/")) {
       sent = await sendMessage(chat, "Send: <meal name> <cost>, e.g. nasi goreng 25k\n/today – today's list\n/undo – remove last");
     } else {
@@ -52,10 +56,10 @@ export async function POST(req: NextRequest) {
       } else {
         const category = categorize(p.name);
         await addExpense(p.name, p.amount, category);
-        const t = await totals();
+        const summary = await formatTodaySummary();
         sent = await sendMessage(
           chat,
-          `✅ ${p.name} – ${rp(p.amount)} (${category})\n📅 Today's total: ${rp(t.today)}`,
+          `✅ ${p.name} – ${rp(p.amount)} (${category})\n\n${summary}`,
         );
       }
     }
