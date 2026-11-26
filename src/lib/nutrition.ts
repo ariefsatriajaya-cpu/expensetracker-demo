@@ -1,5 +1,5 @@
-import { CATEGORIES, categorize, type Category } from "@/lib/categorize";
-import type { NutritionFacts } from "@/lib/db";
+import { CATEGORIES, categorize, type Category } from "./categorize";
+import type { NutritionFacts } from "./db";
 
 export type NutritionAIResult = {
   dishName: string;
