@@ -226,14 +226,16 @@ export function CategoryChart({ data }: { data: { category: string; total: numbe
   return (
     <div className="flex flex-1 flex-col justify-between gap-5">
       {/* Centered Donut Diagram with Total in Center */}
-      <div className="relative mx-auto flex h-48 w-48 shrink-0 items-center justify-center">
+      <div className="relative mx-auto flex h-56 w-56 shrink-0 items-center justify-center">
         <ResponsiveContainer width="100%" height="100%">
-          <PieChart>
+          <PieChart margin={{ top: 12, right: 12, bottom: 12, left: 12 }}>
             <Pie
               data={data}
               dataKey="total"
               nameKey="category"
-              innerRadius={58}
+              cx="50%"
+              cy="50%"
+              innerRadius={60}
               outerRadius={84}
               paddingAngle={data.length > 1 ? 3 : 0}
               stroke="transparent"
