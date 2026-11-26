@@ -7,9 +7,10 @@ export type NutritionAIResult = {
   isFoodOrDrink: boolean;
   nutrition: NutritionFacts;
   aiUsed: boolean;
+  errorReason?: string;
 };
 
-const GEMINI_MODEL = "gemini-2.5-flash";
+const GEMINI_MODEL = "gemini-3.8-flash";
 
 function cleanNumber(v: unknown, roundInt = false): number | null {
   if (v === null || v === undefined || v === "") return null;
@@ -46,7 +47,12 @@ export async function analyzeExpenseOrFood(input: {
   };
 
   const apiKey = (process.env.GEMINI_API_KEY ?? "").trim();
-  if (!apiKey) return fallbackResult;
+  if (!apiKey) {
+    return {
+      ...fallbackResult,
+      errorReason: "GEMINI_API_KEY is not set in this deployment. If you just added it in Vercel, trigger a Redeploy (and open your main .vercel.app domain, not an older preview URL).",
+    };
+  }
 
   const prompt = `You are a certified nutritionist and personal finance assistant specialized in Indonesian and international meals.
 Analyze the provided ${input.image ? "photo and/or text" : "text"}: "${rawName || "(see attached photo)"}"
@@ -85,14 +91,21 @@ ${input.forceFoodAnalysis ? "Note: The user is explicitly asking for a nutrition
           generationConfig: {
             temperature: 0.2,
             responseMimeType: "application/json",
+            thinkingConfig: {
+              thinkingBudget: 0,
+            },
           },
         }),
       },
     );
 
     if (!res.ok) {
-      console.error("Gemini API error:", res.status, await res.text().catch(() => ""));
-      return fallbackResult;
+      const errText = await res.text().catch(() => "");
+      console.error("Gemini API error:", res.status, errText);
+      return {
+        ...fallbackResult,
+        errorReason: `Gemini API returned HTTP ${res.status}: ${errText.slice(0, 180)}`,
+      };
     }
 
     const data = (await res.json()) as {

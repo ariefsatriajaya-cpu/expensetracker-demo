@@ -95,7 +95,7 @@ export async function POST(req: NextRequest) {
       if (!ai.aiUsed) {
         sent = await sendMessage(
           chat,
-          "⚠️ GEMINI_API_KEY is not configured in Vercel yet. Add GEMINI_API_KEY and redeploy to analyze food photos.",
+          `⚠️ ${ai.errorReason || "Could not analyze photo with Gemini AI."}`,
         );
       } else {
         const nutriLine = formatNutritionBlock(ai.nutrition) ?? "No nutritional estimate available for this image.";
@@ -124,7 +124,7 @@ export async function POST(req: NextRequest) {
       if (!ai.aiUsed) {
         sent = await sendMessage(
           chat,
-          "⚠️ GEMINI_API_KEY is not configured in Vercel yet. Add GEMINI_API_KEY and redeploy to enable Nutritional AI.",
+          `⚠️ ${ai.errorReason || "Could not estimate nutrition with Gemini AI."}`,
         );
       } else {
         const nutriLine = formatNutritionBlock(ai.nutrition) ?? "Could not estimate nutrition for that item.";

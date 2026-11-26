@@ -36,7 +36,7 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
     });
     if (!ai.aiUsed) {
       return NextResponse.json(
-        { error: "GEMINI_API_KEY is not configured on the server." },
+        { error: ai.errorReason || "Could not estimate nutrition with Gemini AI." },
         { status: 503 },
       );
     }
