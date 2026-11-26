@@ -13,39 +13,44 @@ export async function POST(req: NextRequest) {
 
   const update = await req.json().catch(() => null);
   const msg = update?.message;
+  if (!msg?.text) {
+    return NextResponse.json({ ok: true, reason: "no_text" });
+  }
   const allowedId = (process.env.ALLOWED_TELEGRAM_ID ?? "").trim();
-  if (!msg?.text || String(msg.from?.id) !== allowedId) {
-    return NextResponse.json({ ok: true });
+  if (String(msg.from?.id) !== allowedId) {
+    return NextResponse.json({ ok: true, reason: "id_mismatch" });
   }
   const chat: number = msg.chat.id;
   const text: string = msg.text.trim();
 
+  let sent = false;
   try {
     if (text.startsWith("/undo")) {
       const e = await undoLast();
-      await sendMessage(chat, e ? `↩️ Removed ${e.name} – ${rp(e.amount)}` : "Nothing to undo.");
+      sent = await sendMessage(chat, e ? `↩️ Removed ${e.name} – ${rp(e.amount)}` : "Nothing to undo.");
     } else if (text.startsWith("/today")) {
       const items = await listToday();
       const total = items.reduce((s, e) => s + e.amount, 0);
-      await sendMessage(
+      sent = await sendMessage(
         chat,
         items.length ? items.map((e) => `• ${e.name} – ${rp(e.amount)}`).join("\n") + `\n\nTotal: ${rp(total)}` : "No expenses today.",
       );
     } else if (text.startsWith("/")) {
-      await sendMessage(chat, "Send: <meal name> <cost>, e.g. nasi goreng 25k\n/today – today's list\n/undo – remove last");
+      sent = await sendMessage(chat, "Send: <meal name> <cost>, e.g. nasi goreng 25k\n/today – today's list\n/undo – remove last");
     } else {
       const p = parseExpense(text);
       if (!p) {
-        await sendMessage(chat, "Couldn't read that. Use: <meal name> <cost>, e.g. nasi goreng 25000");
+        sent = await sendMessage(chat, "Couldn't read that. Use: <meal name> <cost>, e.g. nasi goreng 25000");
       } else {
         const category = categorize(p.name);
         await addExpense(p.name, p.amount, category);
-        await sendMessage(chat, `✅ ${p.name} – ${rp(p.amount)} (${category})`);
+        sent = await sendMessage(chat, `✅ ${p.name} – ${rp(p.amount)} (${category})`);
       }
     }
   } catch (err) {
     console.error(err);
-    await sendMessage(chat, "⚠️ Something went wrong, try again.");
+    sent = await sendMessage(chat, "⚠️ Something went wrong, try again.");
+    return NextResponse.json({ ok: true, reason: "db_error", sent });
   }
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true, reason: sent ? "sent" : "telegram_api_failed" });
 }
