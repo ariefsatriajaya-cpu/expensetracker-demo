@@ -7,13 +7,14 @@ import { sendMessage } from "@/lib/telegram";
 import { safeEqual } from "@/lib/session";
 
 export async function POST(req: NextRequest) {
-  const secret = process.env.TELEGRAM_WEBHOOK_SECRET ?? "";
-  const got = req.headers.get("x-telegram-bot-api-secret-token") ?? "";
+  const secret = (process.env.TELEGRAM_WEBHOOK_SECRET ?? "").trim();
+  const got = (req.headers.get("x-telegram-bot-api-secret-token") ?? "").trim();
   if (!secret || !safeEqual(got, secret)) return NextResponse.json({ ok: false }, { status: 401 });
 
   const update = await req.json().catch(() => null);
   const msg = update?.message;
-  if (!msg?.text || String(msg.from?.id) !== process.env.ALLOWED_TELEGRAM_ID) {
+  const allowedId = (process.env.ALLOWED_TELEGRAM_ID ?? "").trim();
+  if (!msg?.text || String(msg.from?.id) !== allowedId) {
     return NextResponse.json({ ok: true });
   }
   const chat: number = msg.chat.id;
