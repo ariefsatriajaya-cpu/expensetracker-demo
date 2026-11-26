@@ -66,7 +66,8 @@ export default async function Home() {
             </div>
             <div className="min-w-0">
               <h1 className="truncate text-base font-bold tracking-tight sm:text-lg">
-                Expense &amp; Nutrition Tracker
+                <span className="sm:hidden">Expense Tracker</span>
+                <span className="hidden sm:inline">Expense &amp; Nutrition Tracker</span>
               </h1>
               <p className="flex items-center gap-1.5 text-xs" style={{ color: "var(--text-secondary)" }}>
                 <CalendarIcon className="h-3.5 w-3.5 shrink-0" />
@@ -75,17 +76,17 @@ export default async function Home() {
             </div>
           </div>
 
-          <form method="post" action="/api/logout">
+          <form method="post" action="/api/logout" className="shrink-0">
             <button
               type="submit"
-              className="focus-ring inline-flex min-h-11 items-center gap-2 rounded-xl px-3.5 py-2 text-xs font-semibold transition-colors duration-150 active:opacity-80 sm:text-sm"
+              className="focus-ring inline-flex min-h-10 items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-semibold whitespace-nowrap transition-colors duration-150 active:opacity-80 sm:min-h-11 sm:px-3.5 sm:text-sm"
               style={{
                 background: "var(--surface-subtle)",
                 border: "1px solid var(--border-subtle)",
                 color: "var(--text-secondary)",
               }}
             >
-              <LogOutIcon className="h-4 w-4" />
+              <LogOutIcon className="h-4 w-4 shrink-0" />
               <span>Sign out</span>
             </button>
           </form>

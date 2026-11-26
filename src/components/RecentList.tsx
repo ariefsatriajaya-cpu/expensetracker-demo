@@ -233,7 +233,7 @@ export default function RecentList({ items }: { items: Expense[] }) {
           )}
         </div>
 
-        <div className="flex flex-wrap gap-2" role="group" aria-label="Filter by category">
+        <div className="flex flex-wrap gap-1.5 sm:gap-2" role="group" aria-label="Filter by category">
           {filterTabs.map((cat) => {
             const selected = activeCategory === cat;
             return (
@@ -242,7 +242,7 @@ export default function RecentList({ items }: { items: Expense[] }) {
                 type="button"
                 aria-pressed={selected}
                 onClick={() => setActiveCategory(cat)}
-                className="focus-ring min-h-11 rounded-xl px-3.5 py-2 text-xs font-semibold transition-colors duration-150 active:opacity-85 sm:text-sm"
+                className="focus-ring min-h-9 rounded-xl px-3 py-1.5 text-xs font-semibold whitespace-nowrap transition-colors duration-150 active:opacity-85 sm:min-h-10 sm:px-3.5 sm:text-sm"
                 style={{
                   background: selected ? "var(--accent-primary)" : "var(--surface-subtle)",
                   color: selected ? "var(--accent-on-primary)" : "var(--text-secondary)",
@@ -537,128 +537,142 @@ export default function RecentList({ items }: { items: Expense[] }) {
             return (
               <li
                 key={e.id}
-                className="py-4 transition-colors duration-150"
+                className="space-y-3 py-4 transition-colors duration-150"
                 style={{ borderColor: "var(--border-subtle)" }}
               >
+                {/* Top row: Icon + Full Meal Name + Price & Actions */}
                 <div className="flex items-start justify-between gap-3">
-                  <div className="flex min-w-0 items-start gap-3">
+                  <div className="flex min-w-0 flex-1 items-start gap-3">
                     <div
-                      className="mt-0.5 flex h-11 w-11 shrink-0 items-center justify-center rounded-xl"
+                      className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl sm:h-11 sm:w-11"
                       style={{ background: meta.bg, color: meta.fg }}
                     >
                       <CategoryIcon category={e.category} className="h-5 w-5" />
                     </div>
-                    <div className="min-w-0 space-y-1.5">
-                      <p className="truncate text-base font-semibold leading-snug">{e.name}</p>
-                      <p className="flex flex-wrap items-center gap-1.5 text-xs" style={{ color: "var(--text-secondary)" }}>
-                        <span
-                          className="inline-block rounded-md px-1.5 py-0.5 font-medium"
-                          style={{ background: meta.bg, color: meta.fg }}
-                        >
-                          {e.category}
-                        </span>
-                        <span aria-hidden="true">·</span>
-                        <time dateTime={e.created_at} className="font-mono tabular-nums">
-                          {fmt(e.created_at)}
-                        </time>
-                      </p>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-start justify-between gap-2">
+                        <p className="text-sm font-semibold leading-snug break-words sm:text-base">
+                          {e.name}
+                        </p>
+                        <p className="shrink-0 font-mono text-sm font-bold whitespace-nowrap tabular-nums sm:text-base">
+                          {rp(e.amount)}
+                        </p>
+                      </div>
 
-                      {/* Connected Nutritional Facts */}
-                      {e.calories != null ? (
-                        <div className="space-y-1 pt-0.5">
-                          <div className="flex flex-wrap items-center gap-1.5 font-mono text-xs font-semibold tabular-nums">
-                            <span
-                              className="inline-flex items-center gap-1 rounded-md px-2 py-0.5"
-                              style={{ background: "var(--cat-groceries-bg)", color: "var(--cat-groceries-fg)" }}
-                            >
-                              <FlameIcon className="h-3.5 w-3.5" />
-                              {Math.round(e.calories)} kcal
-                            </span>
-                            {e.protein_g != null && (
-                              <span
-                                className="rounded-md px-2 py-0.5 font-medium"
-                                style={{ background: "var(--surface-subtle)", color: "var(--text-primary)" }}
-                              >
-                                P {e.protein_g}g
-                              </span>
-                            )}
-                            {e.carbs_g != null && (
-                              <span
-                                className="rounded-md px-2 py-0.5 font-medium"
-                                style={{ background: "var(--surface-subtle)", color: "var(--text-primary)" }}
-                              >
-                                C {e.carbs_g}g
-                              </span>
-                            )}
-                            {e.fat_g != null && (
-                              <span
-                                className="rounded-md px-2 py-0.5 font-medium"
-                                style={{ background: "var(--surface-subtle)", color: "var(--text-primary)" }}
-                              >
-                                F {e.fat_g}g
-                              </span>
-                            )}
-                          </div>
-                          {e.nutrition_note && (
-                            <p className="text-xs leading-relaxed" style={{ color: "var(--text-secondary)" }}>
-                              {e.nutrition_note}
-                            </p>
-                          )}
-                        </div>
-                      ) : isEdible ? (
-                        <div className="pt-0.5">
+                      <div className="mt-1 flex flex-wrap items-center justify-between gap-2">
+                        <p className="flex flex-wrap items-center gap-1.5 text-xs" style={{ color: "var(--text-secondary)" }}>
+                          <span
+                            className="inline-block rounded-md px-1.5 py-0.5 font-medium whitespace-nowrap"
+                            style={{ background: meta.bg, color: meta.fg }}
+                          >
+                            {e.category}
+                          </span>
+                          <span aria-hidden="true">·</span>
+                          <time dateTime={e.created_at} className="font-mono whitespace-nowrap tabular-nums">
+                            {fmt(e.created_at)}
+                          </time>
+                        </p>
+
+                        <div className="flex shrink-0 items-center gap-1.5">
                           <button
                             type="button"
-                            disabled={isEstimating}
-                            onClick={() => estimateNutritionForRow(e, false)}
-                            className="focus-ring inline-flex min-h-9 items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold transition-opacity active:opacity-80 disabled:opacity-50"
+                            onClick={() => startEdit(e)}
+                            aria-label={`Edit ${e.name}`}
+                            className="focus-ring flex h-9 w-9 items-center justify-center rounded-lg transition-colors duration-150 active:opacity-80 sm:h-10 sm:w-10 sm:rounded-xl"
                             style={{
                               background: "var(--surface-subtle)",
                               border: "1px solid var(--border-subtle)",
-                              color: "var(--accent-text)",
+                              color: "var(--text-secondary)",
                             }}
                           >
-                            <SparklesIcon className="h-3.5 w-3.5" />
-                            <span>{isEstimating ? "Estimating with AI..." : "Estimate Nutrition with AI"}</span>
+                            <EditIcon className="h-4 w-4" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setConfirmDeleteId(confirmDeleteId === e.id ? null : e.id)}
+                            aria-label={`Delete ${e.name}`}
+                            aria-expanded={confirmDeleteId === e.id}
+                            className="focus-ring flex h-9 w-9 items-center justify-center rounded-lg transition-colors duration-150 active:opacity-80 sm:h-10 sm:w-10 sm:rounded-xl"
+                            style={{
+                              background: confirmDeleteId === e.id ? "var(--danger-soft)" : "var(--surface-subtle)",
+                              border: `1px solid ${confirmDeleteId === e.id ? "var(--danger)" : "var(--border-subtle)"}`,
+                              color: "var(--danger)",
+                            }}
+                          >
+                            <TrashIcon className="h-4 w-4" />
                           </button>
                         </div>
-                      ) : null}
+                      </div>
                     </div>
                   </div>
+                </div>
 
-                  <div className="flex shrink-0 items-center gap-2">
-                    <p className="mr-1 font-mono text-sm font-semibold tabular-nums sm:text-base">
-                      {rp(e.amount)}
-                    </p>
+                {/* Full-Width Connected Nutritional Facts */}
+                {e.calories != null ? (
+                  <div
+                    className="space-y-2 rounded-xl p-3 sm:ml-14"
+                    style={{
+                      background: "var(--surface-subtle)",
+                      border: "1px solid var(--border-subtle)",
+                    }}
+                  >
+                    <div className="flex flex-wrap items-center gap-1.5 font-mono text-xs font-semibold tabular-nums">
+                      <span
+                        className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 whitespace-nowrap"
+                        style={{ background: "var(--cat-groceries-bg)", color: "var(--cat-groceries-fg)" }}
+                      >
+                        <FlameIcon className="h-3.5 w-3.5 shrink-0" />
+                        <span>{Math.round(e.calories)} kcal</span>
+                      </span>
+                      {e.protein_g != null && (
+                        <span
+                          className="rounded-md px-2 py-0.5 font-medium whitespace-nowrap"
+                          style={{ background: "var(--surface-elevated)", color: "var(--text-primary)" }}
+                        >
+                          P {e.protein_g}g
+                        </span>
+                      )}
+                      {e.carbs_g != null && (
+                        <span
+                          className="rounded-md px-2 py-0.5 font-medium whitespace-nowrap"
+                          style={{ background: "var(--surface-elevated)", color: "var(--text-primary)" }}
+                        >
+                          C {e.carbs_g}g
+                        </span>
+                      )}
+                      {e.fat_g != null && (
+                        <span
+                          className="rounded-md px-2 py-0.5 font-medium whitespace-nowrap"
+                          style={{ background: "var(--surface-elevated)", color: "var(--text-primary)" }}
+                        >
+                          F {e.fat_g}g
+                        </span>
+                      )}
+                    </div>
+                    {e.nutrition_note && (
+                      <p className="text-xs leading-relaxed break-words" style={{ color: "var(--text-secondary)" }}>
+                        {e.nutrition_note}
+                      </p>
+                    )}
+                  </div>
+                ) : isEdible ? (
+                  <div className="sm:ml-14">
                     <button
                       type="button"
-                      onClick={() => startEdit(e)}
-                      aria-label={`Edit ${e.name}`}
-                      className="focus-ring flex h-11 w-11 items-center justify-center rounded-xl transition-colors duration-150 active:opacity-80"
+                      disabled={isEstimating}
+                      onClick={() => estimateNutritionForRow(e, false)}
+                      className="focus-ring inline-flex min-h-9 items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold whitespace-nowrap transition-opacity active:opacity-80 disabled:opacity-50"
                       style={{
                         background: "var(--surface-subtle)",
                         border: "1px solid var(--border-subtle)",
-                        color: "var(--text-secondary)",
+                        color: "var(--accent-text)",
                       }}
                     >
-                      <EditIcon className="h-4 w-4" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setConfirmDeleteId(confirmDeleteId === e.id ? null : e.id)}
-                      aria-label={`Delete ${e.name}`}
-                      aria-expanded={confirmDeleteId === e.id}
-                      className="focus-ring flex h-11 w-11 items-center justify-center rounded-xl transition-colors duration-150 active:opacity-80"
-                      style={{
-                        background: confirmDeleteId === e.id ? "var(--danger-soft)" : "var(--surface-subtle)",
-                        border: `1px solid ${confirmDeleteId === e.id ? "var(--danger)" : "var(--border-subtle)"}`,
-                        color: "var(--danger)",
-                      }}
-                    >
-                      <TrashIcon className="h-4 w-4" />
+                      <SparklesIcon className="h-3.5 w-3.5 shrink-0" />
+                      <span>{isEstimating ? "Estimating with AI..." : "Estimate Nutrition with AI"}</span>
                     </button>
                   </div>
-                </div>
+                ) : null}
 
                 {confirmDeleteId === e.id && (
                   <div
