@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { addExpense, listToday, undoLast } from "@/lib/db";
+import { addExpense, listToday, totals, undoLast } from "@/lib/db";
 import { parseExpense } from "@/lib/parse";
 import { categorize } from "@/lib/categorize";
 import { rp } from "@/lib/format";
@@ -27,13 +27,21 @@ export async function POST(req: NextRequest) {
   try {
     if (text.startsWith("/undo")) {
       const e = await undoLast();
-      sent = await sendMessage(chat, e ? `↩️ Removed ${e.name} – ${rp(e.amount)}` : "Nothing to undo.");
+      if (e) {
+        const t = await totals();
+        sent = await sendMessage(
+          chat,
+          `↩️ Removed ${e.name} – ${rp(e.amount)}\n📅 Today's total: ${rp(t.today)}`,
+        );
+      } else {
+        sent = await sendMessage(chat, "Nothing to undo.");
+      }
     } else if (text.startsWith("/today")) {
       const items = await listToday();
       const total = items.reduce((s, e) => s + e.amount, 0);
       sent = await sendMessage(
         chat,
-        items.length ? items.map((e) => `• ${e.name} – ${rp(e.amount)}`).join("\n") + `\n\nTotal: ${rp(total)}` : "No expenses today.",
+        items.length ? items.map((e) => `• ${e.name} – ${rp(e.amount)}`).join("\n") + `\n\n📅 Today's total: ${rp(total)}` : "No expenses today.",
       );
     } else if (text.startsWith("/")) {
       sent = await sendMessage(chat, "Send: <meal name> <cost>, e.g. nasi goreng 25k\n/today – today's list\n/undo – remove last");
@@ -44,7 +52,11 @@ export async function POST(req: NextRequest) {
       } else {
         const category = categorize(p.name);
         await addExpense(p.name, p.amount, category);
-        sent = await sendMessage(chat, `✅ ${p.name} – ${rp(p.amount)} (${category})`);
+        const t = await totals();
+        sent = await sendMessage(
+          chat,
+          `✅ ${p.name} – ${rp(p.amount)} (${category})\n📅 Today's total: ${rp(t.today)}`,
+        );
       }
     }
   } catch (err) {

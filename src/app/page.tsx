@@ -169,41 +169,45 @@ export default async function Home() {
         </section>
 
         {/* Analytics Grid */}
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
-          <section className="glass-card rounded-2xl p-5 sm:p-6 lg:col-span-7">
+        <div className="grid grid-cols-1 items-stretch gap-6 lg:grid-cols-12">
+          <section className="glass-card flex flex-col rounded-2xl p-5 sm:p-6 lg:col-span-7">
             <div className="mb-4 flex items-center gap-2.5">
               <span
-                className="flex h-8 w-8 items-center justify-center rounded-lg"
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl"
                 style={{ background: "var(--accent-soft)", color: "var(--accent-primary)" }}
               >
                 <TrendingUpIcon className="h-4 w-4" />
               </span>
               <div>
-                <h2 className="text-base font-bold leading-tight">Spending Trend</h2>
-                <p className="text-xs" style={{ color: "var(--text-secondary)" }}>
+                <h2 className="text-base font-bold leading-tight sm:text-lg">Spending Trend</h2>
+                <p className="text-xs sm:text-sm" style={{ color: "var(--text-secondary)" }}>
                   Daily totals over the last 30 days
                 </p>
               </div>
             </div>
-            <DailyChart data={days} />
+            <div className="flex flex-1 flex-col">
+              <DailyChart data={days} />
+            </div>
           </section>
 
-          <section className="glass-card rounded-2xl p-5 sm:p-6 lg:col-span-5">
+          <section className="glass-card flex flex-col rounded-2xl p-5 sm:p-6 lg:col-span-5">
             <div className="mb-4 flex items-center gap-2.5">
               <span
-                className="flex h-8 w-8 items-center justify-center rounded-lg"
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl"
                 style={{ background: "var(--trust-soft)", color: "var(--trust-blue)" }}
               >
                 <PieChartIcon className="h-4 w-4" />
               </span>
               <div>
-                <h2 className="text-base font-bold leading-tight">Category Share</h2>
-                <p className="text-xs" style={{ color: "var(--text-secondary)" }}>
+                <h2 className="text-base font-bold leading-tight sm:text-lg">Category Share</h2>
+                <p className="text-xs sm:text-sm" style={{ color: "var(--text-secondary)" }}>
                   Current month distribution
                 </p>
               </div>
             </div>
-            <CategoryChart data={cats} />
+            <div className="flex flex-1 flex-col">
+              <CategoryChart data={cats} />
+            </div>
           </section>
         </div>
 
