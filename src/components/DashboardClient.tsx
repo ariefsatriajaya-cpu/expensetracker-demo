@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { CATEGORIES } from "@/lib/categorize";
@@ -15,6 +16,7 @@ import {
   PieChartIcon,
   PlusIcon,
   SendIcon,
+  SettingsIcon,
   SparklesIcon,
   TargetIcon,
   TrendingUpIcon,
@@ -83,18 +85,6 @@ export default function DashboardClient({
     autoAi: true,
   });
 
-  // Target Editor Drawer State
-  const [showTargets, setShowTargets] = useState(false);
-  const [savingTargets, setSavingTargets] = useState(false);
-  const [goals, setGoals] = useState({
-    daily_budget: String(settings.daily_budget),
-    monthly_budget: String(settings.monthly_budget),
-    daily_calories: String(settings.daily_calories),
-    daily_protein_g: String(settings.daily_protein_g),
-    daily_carbs_g: String(settings.daily_carbs_g),
-    daily_fat_g: String(settings.daily_fat_g),
-  });
-
   async function handleAddExpense(ev: React.FormEvent) {
     ev.preventDefault();
     const name = newExp.name.trim();
@@ -131,31 +121,6 @@ export default function DashboardClient({
       router.refresh();
     } finally {
       setAdding(false);
-    }
-  }
-
-  async function handleSaveTargets(ev: React.FormEvent) {
-    ev.preventDefault();
-    setSavingTargets(true);
-    try {
-      const res = await fetch("/api/settings", {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          daily_budget: Number(goals.daily_budget),
-          monthly_budget: Number(goals.monthly_budget),
-          daily_calories: Number(goals.daily_calories),
-          daily_protein_g: Number(goals.daily_protein_g),
-          daily_carbs_g: Number(goals.daily_carbs_g),
-          daily_fat_g: Number(goals.daily_fat_g),
-        }),
-      });
-      if (res.ok) {
-        setShowTargets(false);
-        router.refresh();
-      }
-    } finally {
-      setSavingTargets(false);
     }
   }
 
@@ -264,10 +229,7 @@ export default function DashboardClient({
           <button
             type="button"
             aria-expanded={showAdd}
-            onClick={() => {
-              setShowAdd(!showAdd);
-              if (showTargets) setShowTargets(false);
-            }}
+            onClick={() => setShowAdd(!showAdd)}
             className="focus-ring inline-flex min-h-10 flex-1 items-center justify-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-semibold whitespace-nowrap transition-opacity active:opacity-85 sm:flex-initial sm:text-sm"
             style={{
               background: "var(--accent-primary)",
@@ -278,13 +240,8 @@ export default function DashboardClient({
             <span>Add Expense</span>
           </button>
 
-          <button
-            type="button"
-            aria-expanded={showTargets}
-            onClick={() => {
-              setShowTargets(!showTargets);
-              if (showAdd) setShowAdd(false);
-            }}
+          <Link
+            href="/settings"
             className="focus-ring inline-flex min-h-10 flex-1 items-center justify-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-semibold whitespace-nowrap transition-colors active:opacity-85 sm:flex-initial sm:text-sm"
             style={{
               background: "var(--surface-subtle)",
@@ -292,9 +249,9 @@ export default function DashboardClient({
               color: "var(--text-primary)",
             }}
           >
-            <TargetIcon className="h-4 w-4 shrink-0" />
-            <span>Targets</span>
-          </button>
+            <SettingsIcon className="h-4 w-4 shrink-0" />
+            <span>Targets &amp; Quotas</span>
+          </Link>
         </div>
       </section>
 
@@ -440,167 +397,6 @@ export default function DashboardClient({
               >
                 <CheckIcon className="h-4 w-4" />
                 <span>{adding ? "Analyzing & Saving..." : "Save Expense"}</span>
-              </button>
-            </div>
-          </form>
-        </section>
-      )}
-
-      {/* Expandable "Targets" Form */}
-      {showTargets && (
-        <section className="glass-card rounded-2xl p-5" style={{ borderColor: "var(--accent-primary)" }}>
-          <div className="mb-4 flex items-center justify-between gap-2">
-            <div>
-              <h2 className="text-base font-bold">Budget &amp; Daily Nutrition Targets</h2>
-              <p className="text-xs" style={{ color: "var(--text-secondary)" }}>
-                Synced with your dashboard progress bars and Telegram bot (/setgoal)
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => setShowTargets(false)}
-              aria-label="Close targets form"
-              className="focus-ring flex h-9 w-9 items-center justify-center rounded-lg"
-              style={{ color: "var(--text-secondary)" }}
-            >
-              <XIcon className="h-4 w-4" />
-            </button>
-          </div>
-
-          <form onSubmit={handleSaveTargets} className="space-y-4">
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <div>
-                <label htmlFor="goal-daily-rp" className="block text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-secondary)" }}>
-                  Daily Budget (IDR)
-                </label>
-                <input
-                  id="goal-daily-rp"
-                  type="number"
-                  inputMode="numeric"
-                  min={1000}
-                  value={goals.daily_budget}
-                  onChange={(e) => setGoals({ ...goals, daily_budget: e.target.value })}
-                  className="focus-ring mt-1 min-h-11 w-full rounded-xl px-3.5 py-2 font-mono text-base tabular-nums"
-                  style={{
-                    background: "var(--surface-subtle)",
-                    border: "1px solid var(--border-strong)",
-                    color: "var(--text-primary)",
-                  }}
-                />
-              </div>
-
-              <div>
-                <label htmlFor="goal-month-rp" className="block text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-secondary)" }}>
-                  Monthly Budget (IDR)
-                </label>
-                <input
-                  id="goal-month-rp"
-                  type="number"
-                  inputMode="numeric"
-                  min={10000}
-                  value={goals.monthly_budget}
-                  onChange={(e) => setGoals({ ...goals, monthly_budget: e.target.value })}
-                  className="focus-ring mt-1 min-h-11 w-full rounded-xl px-3.5 py-2 font-mono text-base tabular-nums"
-                  style={{
-                    background: "var(--surface-subtle)",
-                    border: "1px solid var(--border-strong)",
-                    color: "var(--text-primary)",
-                  }}
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-              <div>
-                <label htmlFor="goal-kcal" className="block text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-secondary)" }}>
-                  Daily Calories (kcal)
-                </label>
-                <input
-                  id="goal-kcal"
-                  type="number"
-                  inputMode="numeric"
-                  min={500}
-                  value={goals.daily_calories}
-                  onChange={(e) => setGoals({ ...goals, daily_calories: e.target.value })}
-                  className="focus-ring mt-1 min-h-11 w-full rounded-xl px-3 py-2 font-mono text-sm tabular-nums"
-                  style={{
-                    background: "var(--surface-subtle)",
-                    border: "1px solid var(--border-subtle)",
-                    color: "var(--text-primary)",
-                  }}
-                />
-              </div>
-
-              <div>
-                <label htmlFor="goal-pro" className="block text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-secondary)" }}>
-                  Protein (g/day)
-                </label>
-                <input
-                  id="goal-pro"
-                  type="number"
-                  min={10}
-                  value={goals.daily_protein_g}
-                  onChange={(e) => setGoals({ ...goals, daily_protein_g: e.target.value })}
-                  className="focus-ring mt-1 min-h-11 w-full rounded-xl px-3 py-2 font-mono text-sm tabular-nums"
-                  style={{
-                    background: "var(--surface-subtle)",
-                    border: "1px solid var(--border-subtle)",
-                    color: "var(--text-primary)",
-                  }}
-                />
-              </div>
-
-              <div>
-                <label htmlFor="goal-carb" className="block text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-secondary)" }}>
-                  Carbs (g/day)
-                </label>
-                <input
-                  id="goal-carb"
-                  type="number"
-                  min={10}
-                  value={goals.daily_carbs_g}
-                  onChange={(e) => setGoals({ ...goals, daily_carbs_g: e.target.value })}
-                  className="focus-ring mt-1 min-h-11 w-full rounded-xl px-3 py-2 font-mono text-sm tabular-nums"
-                  style={{
-                    background: "var(--surface-subtle)",
-                    border: "1px solid var(--border-subtle)",
-                    color: "var(--text-primary)",
-                  }}
-                />
-              </div>
-
-              <div>
-                <label htmlFor="goal-fat" className="block text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-secondary)" }}>
-                  Fat (g/day)
-                </label>
-                <input
-                  id="goal-fat"
-                  type="number"
-                  min={10}
-                  value={goals.daily_fat_g}
-                  onChange={(e) => setGoals({ ...goals, daily_fat_g: e.target.value })}
-                  className="focus-ring mt-1 min-h-11 w-full rounded-xl px-3 py-2 font-mono text-sm tabular-nums"
-                  style={{
-                    background: "var(--surface-subtle)",
-                    border: "1px solid var(--border-subtle)",
-                    color: "var(--text-primary)",
-                  }}
-                />
-              </div>
-            </div>
-
-            <div className="flex justify-end">
-              <button
-                type="submit"
-                disabled={savingTargets}
-                className="focus-ring inline-flex min-h-11 items-center gap-1.5 rounded-xl px-5 py-2.5 text-sm font-semibold disabled:opacity-50"
-                style={{
-                  background: "var(--accent-primary)",
-                  color: "var(--accent-on-primary)",
-                }}
-              >
-                <CheckIcon className="h-4 w-4" />
-                <span>{savingTargets ? "Saving..." : "Save Targets"}</span>
               </button>
             </div>
           </form>

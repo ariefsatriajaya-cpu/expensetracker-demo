@@ -1,3 +1,4 @@
+import Link from "next/link";
 import {
   byCategoryAllPeriods,
   byDay,
@@ -10,7 +11,7 @@ import {
   totals,
 } from "@/lib/db";
 import DashboardClient from "@/components/DashboardClient";
-import { CalendarIcon, LogOutIcon, WalletIcon } from "@/components/Icons";
+import { CalendarIcon, LogOutIcon, SettingsIcon, WalletIcon } from "@/components/Icons";
 
 export const dynamic = "force-dynamic";
 
@@ -106,20 +107,35 @@ export default async function Home() {
             </div>
           </div>
 
-          <form method="post" action="/api/logout" className="shrink-0">
-            <button
-              type="submit"
+          <div className="flex shrink-0 items-center gap-2">
+            <Link
+              href="/settings"
               className="focus-ring inline-flex min-h-10 items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-semibold whitespace-nowrap transition-colors duration-150 active:opacity-80 sm:min-h-11 sm:px-3.5 sm:text-sm"
               style={{
                 background: "var(--surface-subtle)",
                 border: "1px solid var(--border-subtle)",
-                color: "var(--text-secondary)",
+                color: "var(--text-primary)",
               }}
             >
-              <LogOutIcon className="h-4 w-4 shrink-0" />
-              <span>Sign out</span>
-            </button>
-          </form>
+              <SettingsIcon className="h-4 w-4 shrink-0" />
+              <span>Settings</span>
+            </Link>
+
+            <form method="post" action="/api/logout" className="shrink-0">
+              <button
+                type="submit"
+                className="focus-ring inline-flex min-h-10 items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-semibold whitespace-nowrap transition-colors duration-150 active:opacity-80 sm:min-h-11 sm:px-3.5 sm:text-sm"
+                style={{
+                  background: "var(--surface-subtle)",
+                  border: "1px solid var(--border-subtle)",
+                  color: "var(--text-secondary)",
+                }}
+              >
+                <LogOutIcon className="h-4 w-4 shrink-0" />
+                <span>Sign out</span>
+              </button>
+            </form>
+          </div>
         </div>
       </header>
 
