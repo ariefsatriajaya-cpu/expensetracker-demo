@@ -1,14 +1,41 @@
 import { NextRequest, NextResponse } from "next/server";
-import { addExpense, getExpenseById, listRecent, listToday, undoLast, updateExpense, type Expense } from "@/lib/db";
-import { parseAmountOnly, parseExpense, parseNutritionQuery, parseRecalcCommand } from "@/lib/parse";
+import {
+  addExpense,
+  getExpenseById,
+  getSettings,
+  listRecent,
+  listToday,
+  nutritionTotals,
+  totals,
+  undoLast,
+  updateExpense,
+  updateSettings,
+  type Expense,
+} from "@/lib/db";
+import {
+  parseAmountOnly,
+  parseAskCommand,
+  parseExpense,
+  parseMultipleExpenses,
+  parseNutritionQuery,
+  parseRecalcCommand,
+  parseSetGoalCommand,
+} from "@/lib/parse";
 import { rp } from "@/lib/format";
-import { analyzeExpenseOrFood, formatNutritionBlock } from "@/lib/nutrition";
+import {
+  analyzeExpenseOrFood,
+  analyzePhotoForReceiptOrMeal,
+  askFinancialNutritionCoach,
+  formatNutritionBlock,
+} from "@/lib/nutrition";
 import { downloadTelegramPhoto, extractTelegramImageFileId, sendMessage } from "@/lib/telegram";
 import { safeEqual } from "@/lib/session";
 
 async function formatTodaySummary() {
-  const items = await listToday();
-  if (!items.length) return "📅 Today's expenses: none\n💰 Today's total: Rp0";
+  const [items, settings] = await Promise.all([listToday(), getSettings()]);
+  if (!items.length) {
+    return `📅 Today's expenses: none\n💰 Today's total: Rp0 / ${rp(settings.daily_budget)} (${rp(settings.daily_budget)} left)\n🎯 Calorie target: 0 / ${settings.daily_calories} kcal`;
+  }
 
   const totalRp = items.reduce((s, e) => s + e.amount, 0);
   const totalCal = items.reduce((s, e) => s + (e.calories ?? 0), 0);
@@ -23,38 +50,48 @@ async function formatTodaySummary() {
     })
     .join("\n");
 
+  const remRp = settings.daily_budget - totalRp;
+  const rpBudgetTag =
+    remRp >= 0
+      ? `${rp(remRp)} left of ${rp(settings.daily_budget)}`
+      : `⚠️ ${rp(Math.abs(remRp))} over ${rp(settings.daily_budget)}`;
+
+  const remCal = settings.daily_calories - Math.round(totalCal);
+  const calBudgetTag =
+    remCal >= 0 ? `${remCal} kcal left` : `${Math.abs(remCal)} kcal over target`;
+  const remPro = Math.max(0, Math.round((settings.daily_protein_g - totalPro) * 10) / 10);
+
   const nutriFooter =
     totalCal > 0
-      ? `\n🥗 Today's nutrition: ${Math.round(totalCal)} kcal (P ${totalPro}g · C ${totalCarb}g · F ${totalFat}g)`
+      ? `\n🥗 Today's nutrition: ${Math.round(totalCal)} / ${settings.daily_calories} kcal (${calBudgetTag})\n🥩 Macros: P ${totalPro}g/${settings.daily_protein_g}g (${remPro}g to go) · C ${totalCarb}g · F ${totalFat}g`
       : "";
 
-  return `📅 Today's expenses (${items.length}):\n${lines}\n\n💰 Today's total: ${rp(totalRp)}${nutriFooter}`;
+  return `📅 Today's expenses (${items.length}):\n${lines}\n\n💰 Today's total: ${rp(totalRp)} (${rpBudgetTag})${nutriFooter}`;
 }
 
-async function resolveExpenseToRecalc(targetIndexOrId: number | null, extraContext: string): Promise<{
+async function resolveExpenseToRecalc(
+  targetIndexOrId: number | null,
+  extraContext: string,
+): Promise<{
   target: Expense | null;
   notesForAi: string;
 }> {
   const [todayItems, recentItems] = await Promise.all([listToday(), listRecent(25)]);
 
   if (targetIndexOrId !== null) {
-    // 1. Match 1-based number from today's numbered list (1..N)
     if (targetIndexOrId >= 1 && targetIndexOrId <= todayItems.length) {
       return { target: todayItems[targetIndexOrId - 1], notesForAi: extraContext };
     }
-    // 2. Match exact database ID
     const byId = recentItems.find((e) => e.id === targetIndexOrId) ?? (await getExpenseById(targetIndexOrId));
     if (byId) {
       return { target: byId, notesForAi: extraContext };
     }
-    // 3. Fallback to 1-based index in recent items list
     if (targetIndexOrId >= 1 && targetIndexOrId <= recentItems.length) {
       return { target: recentItems[targetIndexOrId - 1], notesForAi: extraContext };
     }
     return { target: null, notesForAi: extraContext };
   }
 
-  // No number specified: check if extraContext names a specific recent expense
   const pool = [...[...todayItems].reverse(), ...recentItems];
   if (extraContext) {
     const lower = extraContext.toLowerCase();
@@ -66,7 +103,6 @@ async function resolveExpenseToRecalc(targetIndexOrId: number | null, extraConte
     }
   }
 
-  // Default to the most recently logged expense
   const latest = todayItems[todayItems.length - 1] ?? recentItems[0] ?? null;
   return { target: latest, notesForAi: extraContext };
 }
@@ -94,14 +130,25 @@ export async function POST(req: NextRequest) {
 
   let sent = false;
   try {
-    // Download photo if the message (or replied-to message) includes an image
     const image = imageFileId ? await downloadTelegramPhoto(imageFileId) : null;
     if (imageFileId && !image) {
       sent = await sendMessage(chat, "⚠️ Couldn't download that photo from Telegram. Please try again.");
       return NextResponse.json({ ok: true, reason: "photo_download_failed" });
     }
 
-    // 1. Handle /recalc command (works with text only OR with a photo + caption/reply!)
+    // 1. Handle /setgoal (/goal, /target)
+    const goalCmd = rawText ? parseSetGoalCommand(rawText) : null;
+    if (goalCmd !== null) {
+      const s = goalCmd.hasUpdates ? await updateSettings(goalCmd.patch) : await getSettings();
+      const header = goalCmd.hasUpdates ? "✅ Updated your targets:" : "🎯 Current Budget & Nutrition Targets:";
+      sent = await sendMessage(
+        chat,
+        `${header}\n• Daily Budget: ${rp(s.daily_budget)}\n• Monthly Budget: ${rp(s.monthly_budget)}\n• Daily Calories: ${s.daily_calories} kcal\n• Protein: ${s.daily_protein_g}g · Carbs: ${s.daily_carbs_g}g · Fat: ${s.daily_fat_g}g\n\n💡 Update anytime with:\n/setgoal daily 120k month 3.5jt kcal 2100 p 130 c 230 f 65`,
+      );
+      return NextResponse.json({ ok: true, reason: sent ? "sent" : "telegram_api_failed" });
+    }
+
+    // 2. Handle /recalc command (works with text only OR with a photo + caption/reply!)
     const recalcCmd = rawText ? parseRecalcCommand(rawText) : null;
     if (recalcCmd !== null) {
       const { target, notesForAi } = await resolveExpenseToRecalc(
@@ -111,7 +158,7 @@ export async function POST(req: NextRequest) {
       if (!target) {
         sent = await sendMessage(
           chat,
-          "⚠️ Couldn't find that expense to recalculate.\n\nUsage:\n• `/recalc` – recalculate your last expense\n• `/recalc 1` – recalculate item #1 from `/today`\n• `/recalc 1 nasi setengah porsi, dada ayam` – recalculate #1 with extra details\n• Send or reply to a meal photo with `/recalc 1` to recalculate using the photo!",
+          "⚠️ Couldn't find that expense to recalculate.\n\nUsage:\n• /recalc – recalculate your last expense\n• /recalc 1 – recalculate item #1 from /today\n• /recalc 1 nasi setengah porsi, dada ayam – recalculate #1 with extra details\n• Send or reply to a meal photo with /recalc 1 to recalculate using the photo!",
         );
         return NextResponse.json({ ok: true, reason: "sent" });
       }
@@ -148,13 +195,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true, reason: sent ? "sent" : "telegram_api_failed" });
     }
 
-    // 2. Handle messages that include a Photo (expense with price OR standalone nutrition with text+photo)
+    // 3. Handle messages that include a Photo (expense with price, receipt OCR, OR standalone meal photo)
     if (image) {
       const parsedWithName = rawText ? parseExpense(rawText) : null;
       const amountOnly = !parsedWithName && rawText ? parseAmountOnly(rawText) : null;
       const expenseAmount = parsedWithName?.amount ?? amountOnly;
 
-      // Photo WITH price caption (e.g. "ayam geprek dada, nasi setengah 22k" or "22k") -> Log expense + nutrition from input AND photo
+      // 3a. Photo WITH explicit price caption -> Log expense + nutrition from input AND photo
       if (expenseAmount !== null) {
         const ai = await analyzeExpenseOrFood({
           description: parsedWithName?.name,
@@ -172,35 +219,59 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ ok: true, reason: sent ? "sent" : "telegram_api_failed" });
       }
 
-      // Photo WITHOUT price caption -> Analyze nutrition based on both user caption input AND photo
+      // 3b. Photo WITHOUT price caption -> Auto-detect Receipt/Bill OCR vs. Standalone Meal Photo
       const cleanCaption = parseNutritionQuery(rawText) ?? rawText;
-      const ai = await analyzeExpenseOrFood({
-        description: cleanCaption || undefined,
+      const photoAnalysis = await analyzePhotoForReceiptOrMeal({
+        caption: cleanCaption || undefined,
         image,
-        forceFoodAnalysis: true,
       });
-      if (!ai.aiUsed) {
+
+      if (!photoAnalysis.aiUsed) {
         sent = await sendMessage(
           chat,
-          `⚠️ ${ai.errorReason || "Could not analyze photo with Gemini AI."}`,
+          `⚠️ ${photoAnalysis.errorReason || "Could not analyze photo with Gemini AI."}`,
         );
-      } else {
-        const nutriLine = formatNutritionBlock(ai.nutrition) ?? "No nutritional estimate available for this image.";
-        sent = await sendMessage(
-          chat,
-          `🍽️ ${ai.dishName} (${ai.category}) 📷\n${nutriLine}\n\n💡 To log this as an expense too, send the photo with a price caption (e.g. "${cleanCaption || ai.dishName} 25k"), or reply to this photo with "/recalc 1" to update an existing expense.`,
-        );
+        return NextResponse.json({ ok: true, reason: "ai_failed" });
       }
+
+      // If Gemini detected a Receipt / Bill / Order screenshot with prices, log every item!
+      if (photoAnalysis.isReceipt && photoAnalysis.receiptItems.length > 0) {
+        const savedItems: Expense[] = [];
+        for (const item of photoAnalysis.receiptItems) {
+          const saved = await addExpense(item.dishName, item.amount, item.category, item.nutrition);
+          savedItems.push(saved);
+        }
+        const receiptLines = savedItems
+          .map((s) => {
+            const cal = s.calories != null ? ` · 🔥 ${Math.round(s.calories)} kcal` : "";
+            return `• ${s.name} – ${rp(s.amount)} (${s.category})${cal}`;
+          })
+          .join("\n");
+        const summary = await formatTodaySummary();
+        sent = await sendMessage(
+          chat,
+          `🧾 Logged ${savedItems.length} ${savedItems.length === 1 ? "item" : "items"} from receipt:\n${receiptLines}\n\n${summary}`,
+        );
+        return NextResponse.json({ ok: true, reason: sent ? "sent" : "telegram_api_failed" });
+      }
+
+      // Otherwise it's a standalone Meal Photo -> return nutrition breakdown
+      const ai = photoAnalysis.mealResult;
+      const nutriLine = formatNutritionBlock(ai.nutrition) ?? "No nutritional estimate available for this image.";
+      sent = await sendMessage(
+        chat,
+        `🍽️ ${ai.dishName} (${ai.category}) 📷\n${nutriLine}\n\n💡 To log this as an expense too, send the photo with a price caption (e.g. "${cleanCaption || ai.dishName} 25k"), or reply to this photo with "/recalc 1" to update an existing expense.`,
+      );
       return NextResponse.json({ ok: true, reason: sent ? "sent" : "telegram_api_failed" });
     }
 
-    // 3. Handle Standalone Text Nutrition Queries (/nutri <food> or ? <food>)
+    // 4. Handle Standalone Text Nutrition Queries (/nutri <food> or ? <food>)
     const nutriQuery = parseNutritionQuery(rawText);
     if (nutriQuery !== null) {
       if (!nutriQuery) {
         sent = await sendMessage(
           chat,
-          "🥗 Usage:\n• /nutri nasi padang rendang\n• ? kopi susu gula aren\n• Or send a photo of your meal with optional description!",
+          "🥗 Usage:\n• /nutri nasi padang rendang\n• ? kopi susu gula aren\n• Or send a photo of your meal or receipt!",
         );
         return NextResponse.json({ ok: true, reason: "sent" });
       }
@@ -223,7 +294,34 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true, reason: sent ? "sent" : "telegram_api_failed" });
     }
 
-    // 4. Handle Commands (/undo, /today, /start, /help)
+    // 5. Handle Explicit /ask (/coach) command
+    const askQuery = parseAskCommand(rawText);
+    if (askQuery !== null) {
+      if (!askQuery) {
+        sent = await sendMessage(
+          chat,
+          "🤖 AI Financial & Nutrition Coach:\nAsk anything about your budget, spending, or meal recommendations!\nExamples:\n• /ask saran makan malam budget 25k tinggi protein\n• /ask kategori apa paling boros bulan ini?",
+        );
+        return NextResponse.json({ ok: true, reason: "sent" });
+      }
+      const [settings, t, nutri, recent] = await Promise.all([
+        getSettings(),
+        totals(),
+        nutritionTotals(),
+        listRecent(25),
+      ]);
+      const answer = await askFinancialNutritionCoach({
+        question: askQuery,
+        settings,
+        totals: t,
+        nutrition: nutri,
+        recentExpenses: recent,
+      });
+      sent = await sendMessage(chat, `🤖 ${answer}`);
+      return NextResponse.json({ ok: true, reason: sent ? "sent" : "telegram_api_failed" });
+    }
+
+    // 6. Handle Standard Commands (/undo, /today, /start, /help)
     if (rawText.startsWith("/undo")) {
       const e = await undoLast();
       if (e) {
@@ -241,25 +339,45 @@ export async function POST(req: NextRequest) {
     } else if (rawText.startsWith("/")) {
       sent = await sendMessage(
         chat,
-        "Commands & usage:\n• Log expense + nutrition: nasi goreng 25k\n• Photo + text/price: analyzes both your caption & photo\n• /recalc [number] [extra details] – recalculate nutrition for a previous expense (works with photos too!)\n• /nutri <meal> or ? <meal> – check nutrition only\n• /today – today's expenses & nutrition\n• /undo – remove last entry",
+        "Commands & usage:\n• Single or multi-item expense: geprek 22k, es teh 5k\n• Photo of receipt/struk: auto-extracts & logs items\n• Photo of meal + price: logs meal & nutrition from caption + photo\n• /recalc [number] [details] – recalculate an earlier expense\n• /nutri <meal> or ? <meal> – check nutrition only\n• /ask <question> – ask your AI Finance & Nutrition Coach\n• /setgoal – view or update budget & macro targets\n• /today – today's expenses, budget & nutrition\n• /undo – remove last entry",
       );
     } else {
-      // 5. Handle Regular Text Expense
-      const p = parseExpense(rawText);
-      if (!p) {
-        sent = await sendMessage(
-          chat,
-          "Couldn't read that.\n• To log an expense: <meal name> <cost> (e.g. nasi goreng 25k)\n• To recalculate an earlier expense: /recalc 1 <extra details>\n• To check nutrition only: /nutri <meal name> or ? <meal name>",
+      // 7. Handle Single or Multi-Item Expense (or fallback to AI Coach for natural language questions without a price!)
+      const parsedList = parseMultipleExpenses(rawText);
+      if (parsedList && parsedList.length > 0) {
+        const analyzed = await Promise.all(
+          parsedList.map(async (p) => {
+            const ai = await analyzeExpenseOrFood({ description: p.name });
+            const saved = await addExpense(p.name, p.amount, ai.category, ai.nutrition);
+            return saved;
+          }),
         );
-      } else {
-        const ai = await analyzeExpenseOrFood({ description: p.name });
-        const saved = await addExpense(p.name, p.amount, ai.category, ai.nutrition);
-        const nutriLine = formatNutritionBlock(saved);
+
+        const confirmLines = analyzed
+          .map((saved) => {
+            const nutriLine = formatNutritionBlock(saved);
+            return `✅ ${saved.name} – ${rp(saved.amount)} (${saved.category})${nutriLine ? `\n${nutriLine}` : ""}`;
+          })
+          .join("\n\n");
+
         const summary = await formatTodaySummary();
-        sent = await sendMessage(
-          chat,
-          `✅ ${saved.name} – ${rp(saved.amount)} (${saved.category})${nutriLine ? `\n${nutriLine}` : ""}\n\n${summary}`,
-        );
+        sent = await sendMessage(chat, `${confirmLines}\n\n${summary}`);
+      } else {
+        // Natural language message without a price -> Answer with AI Financial & Nutrition Coach!
+        const [settings, t, nutri, recent] = await Promise.all([
+          getSettings(),
+          totals(),
+          nutritionTotals(),
+          listRecent(25),
+        ]);
+        const answer = await askFinancialNutritionCoach({
+          question: rawText,
+          settings,
+          totals: t,
+          nutrition: nutri,
+          recentExpenses: recent,
+        });
+        sent = await sendMessage(chat, `🤖 ${answer}`);
       }
     }
   } catch (err) {

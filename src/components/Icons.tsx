@@ -157,6 +157,24 @@ export function SparklesIcon(props: IconProps) {
   );
 }
 
+export function PlusIcon(props: IconProps) {
+  return (
+    <svg {...base} {...props}>
+      <path d="M12 5v14M5 12h14" />
+    </svg>
+  );
+}
+
+export function TargetIcon(props: IconProps) {
+  return (
+    <svg {...base} {...props}>
+      <circle cx="12" cy="12" r="10" />
+      <circle cx="12" cy="12" r="6" />
+      <circle cx="12" cy="12" r="2" />
+    </svg>
+  );
+}
+
 export const CATEGORY_META: Record<string, { color: string; fg: string; bg: string }> = {
   Food: { color: "#10b981", fg: "var(--cat-food-fg)", bg: "var(--cat-food-bg)" },
   Drink: { color: "#06b6d4", fg: "var(--cat-drink-fg)", bg: "var(--cat-drink-bg)" },

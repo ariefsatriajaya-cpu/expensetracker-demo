@@ -29,6 +29,32 @@ export type PeriodNutrition = {
   loggedItems: number;
 };
 
+export type NutritionTrendPoint = {
+  day: string;
+  calories: number;
+  protein: number;
+  carbs: number;
+  fat: number;
+};
+
+export type UserSettings = {
+  daily_budget: number;
+  monthly_budget: number;
+  daily_calories: number;
+  daily_protein_g: number;
+  daily_carbs_g: number;
+  daily_fat_g: number;
+};
+
+export const DEFAULT_SETTINGS: UserSettings = {
+  daily_budget: 100_000,
+  monthly_budget: 3_000_000,
+  daily_calories: 2000,
+  daily_protein_g: 120,
+  daily_carbs_g: 225,
+  daily_fat_g: 65,
+};
+
 const TZ = "Asia/Jakarta";
 let initPromise: Promise<unknown> | null = null;
 
@@ -52,6 +78,16 @@ function init() {
       ADD COLUMN IF NOT EXISTS carbs_g numeric(6,1),
       ADD COLUMN IF NOT EXISTS fat_g numeric(6,1),
       ADD COLUMN IF NOT EXISTS nutrition_note text`;
+    await db`CREATE TABLE IF NOT EXISTS user_settings (
+      id integer PRIMARY KEY DEFAULT 1,
+      daily_budget bigint NOT NULL DEFAULT 100000,
+      monthly_budget bigint NOT NULL DEFAULT 3000000,
+      daily_calories integer NOT NULL DEFAULT 2000,
+      daily_protein_g numeric(6,1) NOT NULL DEFAULT 120,
+      daily_carbs_g numeric(6,1) NOT NULL DEFAULT 225,
+      daily_fat_g numeric(6,1) NOT NULL DEFAULT 65
+    )`;
+    await db`INSERT INTO user_settings (id) VALUES (1) ON CONFLICT (id) DO NOTHING`;
   })().catch((e) => {
     initPromise = null;
     throw e;
@@ -80,6 +116,50 @@ const fix = (r: Record<string, unknown>): Expense => ({
   ...(typeof r.is_week === "boolean" ? { is_week: r.is_week } : {}),
   ...(typeof r.is_month === "boolean" ? { is_month: r.is_month } : {}),
 });
+
+export async function getSettings(): Promise<UserSettings> {
+  await init();
+  const r = await sql()`SELECT * FROM user_settings WHERE id = 1 LIMIT 1`;
+  if (!r[0]) return DEFAULT_SETTINGS;
+  return {
+    daily_budget: Number(r[0].daily_budget ?? DEFAULT_SETTINGS.daily_budget),
+    monthly_budget: Number(r[0].monthly_budget ?? DEFAULT_SETTINGS.monthly_budget),
+    daily_calories: Number(r[0].daily_calories ?? DEFAULT_SETTINGS.daily_calories),
+    daily_protein_g: Number(r[0].daily_protein_g ?? DEFAULT_SETTINGS.daily_protein_g),
+    daily_carbs_g: Number(r[0].daily_carbs_g ?? DEFAULT_SETTINGS.daily_carbs_g),
+    daily_fat_g: Number(r[0].daily_fat_g ?? DEFAULT_SETTINGS.daily_fat_g),
+  };
+}
+
+export async function updateSettings(patch: Partial<UserSettings>): Promise<UserSettings> {
+  const cur = await getSettings();
+  const next: UserSettings = {
+    daily_budget: patch.daily_budget && patch.daily_budget > 0 ? Math.round(patch.daily_budget) : cur.daily_budget,
+    monthly_budget:
+      patch.monthly_budget && patch.monthly_budget > 0 ? Math.round(patch.monthly_budget) : cur.monthly_budget,
+    daily_calories:
+      patch.daily_calories && patch.daily_calories > 0 ? Math.round(patch.daily_calories) : cur.daily_calories,
+    daily_protein_g:
+      patch.daily_protein_g && patch.daily_protein_g > 0
+        ? Math.round(patch.daily_protein_g * 10) / 10
+        : cur.daily_protein_g,
+    daily_carbs_g:
+      patch.daily_carbs_g && patch.daily_carbs_g > 0
+        ? Math.round(patch.daily_carbs_g * 10) / 10
+        : cur.daily_carbs_g,
+    daily_fat_g:
+      patch.daily_fat_g && patch.daily_fat_g > 0 ? Math.round(patch.daily_fat_g * 10) / 10 : cur.daily_fat_g,
+  };
+  await sql()`UPDATE user_settings
+    SET daily_budget = ${next.daily_budget},
+        monthly_budget = ${next.monthly_budget},
+        daily_calories = ${next.daily_calories},
+        daily_protein_g = ${next.daily_protein_g},
+        daily_carbs_g = ${next.daily_carbs_g},
+        daily_fat_g = ${next.daily_fat_g}
+    WHERE id = 1`;
+  return next;
+}
 
 export async function addExpense(
   name: string,
@@ -247,6 +327,51 @@ export async function byHourToday() {
     GROUP BY g.h
     ORDER BY g.h`;
   return r.map((x) => ({ day: String(x.day), total: Number(x.total) }));
+}
+
+export async function nutritionByDay(days = 30): Promise<NutritionTrendPoint[]> {
+  await init();
+  const r = await sql()`SELECT
+      to_char(g.d, 'YYYY-MM-DD') AS day,
+      COALESCE(SUM(e.calories), 0) AS calories,
+      COALESCE(SUM(e.protein_g), 0) AS protein,
+      COALESCE(SUM(e.carbs_g), 0) AS carbs,
+      COALESCE(SUM(e.fat_g), 0) AS fat
+    FROM generate_series((now() AT TIME ZONE ${TZ})::date - ${days - 1}::int, (now() AT TIME ZONE ${TZ})::date, interval '1 day') AS g(d)
+    LEFT JOIN expenses e ON (e.created_at AT TIME ZONE ${TZ})::date = g.d::date
+    GROUP BY g.d ORDER BY g.d`;
+  const round1 = (v: unknown) => Math.round(Number(v ?? 0) * 10) / 10;
+  return r.map((x) => ({
+    day: String(x.day),
+    calories: Math.round(Number(x.calories ?? 0)),
+    protein: round1(x.protein),
+    carbs: round1(x.carbs),
+    fat: round1(x.fat),
+  }));
+}
+
+export async function nutritionByHourToday(): Promise<NutritionTrendPoint[]> {
+  await init();
+  const r = await sql()`SELECT
+      lpad(g.h::text, 2, '0') || ':00' AS day,
+      COALESCE(SUM(e.calories), 0) AS calories,
+      COALESCE(SUM(e.protein_g), 0) AS protein,
+      COALESCE(SUM(e.carbs_g), 0) AS carbs,
+      COALESCE(SUM(e.fat_g), 0) AS fat
+    FROM generate_series(0, 23) AS g(h)
+    LEFT JOIN expenses e
+      ON (e.created_at AT TIME ZONE ${TZ})::date = (now() AT TIME ZONE ${TZ})::date
+     AND EXTRACT(HOUR FROM (e.created_at AT TIME ZONE ${TZ}))::int = g.h
+    GROUP BY g.h
+    ORDER BY g.h`;
+  const round1 = (v: unknown) => Math.round(Number(v ?? 0) * 10) / 10;
+  return r.map((x) => ({
+    day: String(x.day),
+    calories: Math.round(Number(x.calories ?? 0)),
+    protein: round1(x.protein),
+    carbs: round1(x.carbs),
+    fat: round1(x.fat),
+  }));
 }
 
 export async function byCategory() {

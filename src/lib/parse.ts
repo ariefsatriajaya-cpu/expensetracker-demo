@@ -5,6 +5,15 @@ export type RecalcCommand = {
   extraContext: string;
 };
 
+export type GoalPatch = {
+  daily_budget?: number;
+  monthly_budget?: number;
+  daily_calories?: number;
+  daily_protein_g?: number;
+  daily_carbs_g?: number;
+  daily_fat_g?: number;
+};
+
 export function toAmount(tok: string): number | null {
   const t = tok.trim().toLowerCase().replace(/^rp\.?/, "");
   const m = t.match(/^(\d+(?:[.,]\d+)*)(k|rb|ribu|jt|juta)?$/);
@@ -34,6 +43,42 @@ export function parseExpense(text: string): Parsed | null {
   return { name, amount };
 }
 
+/**
+ * Parses one or multiple expenses from a single message.
+ * - Multi-line messages where every non-empty line is a valid expense -> returns all.
+ * - Comma/semicolon separated segments where every segment is a valid expense (e.g. "geprek 22k, es teh 5k") -> returns all.
+ * - Single expense with a comma inside its name (e.g. "makan di polsek, geprek 22k") -> returns 1 item.
+ */
+export function parseMultipleExpenses(text: string): Parsed[] | null {
+  const lines = text
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean);
+  if (!lines.length) return null;
+
+  const results: Parsed[] = [];
+  for (const line of lines) {
+    const commaParts = line
+      .split(/\s*[,;]\s*/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+
+    if (commaParts.length > 1) {
+      const parsedParts = commaParts.map(parseExpense);
+      if (parsedParts.every((p): p is Parsed => p !== null)) {
+        results.push(...parsedParts);
+        continue;
+      }
+    }
+
+    const single = parseExpense(line);
+    if (!single) return null;
+    results.push(single);
+  }
+
+  return results.length > 0 ? results : null;
+}
+
 export function parseAmountOnly(text: string): number | null {
   const trimmed = text.trim();
   if (!trimmed || /\s/.test(trimmed)) return null;
@@ -47,6 +92,13 @@ export function parseNutritionQuery(text: string): string | null {
     return q || null;
   }
   const m = trimmed.match(/^\/(?:nutri|nutrition|kalori|gizi)(?:@\S+)?(?:\s+([\s\S]+))?$/i);
+  if (!m) return null;
+  return (m[1] ?? "").trim();
+}
+
+export function parseAskCommand(text: string): string | null {
+  const trimmed = text.trim();
+  const m = trimmed.match(/^\/(?:ask|coach|tanya|saran)(?:@\S+)?(?:\s+([\s\S]+))?$/i);
   if (!m) return null;
   return (m[1] ?? "").trim();
 }
@@ -70,5 +122,47 @@ export function parseRecalcCommand(text: string): RecalcCommand | null {
   return {
     targetIndexOrId: null,
     extraContext: arg,
+  };
+}
+
+export function parseSetGoalCommand(text: string): { patch: GoalPatch; hasUpdates: boolean } | null {
+  const trimmed = text.trim();
+  const m = trimmed.match(/^\/(?:setgoal|goal|target|targets)(?:@\S+)?(?:\s+([\s\S]+))?$/i);
+  if (!m) return null;
+  const arg = (m[1] ?? "").trim();
+  if (!arg) return { patch: {}, hasUpdates: false };
+
+  const patch: GoalPatch = {};
+  const pairRegex =
+    /\b(daily|day|harian|budget|month|monthly|bulanan|kcal|cal|calories|kalori|p|pro|protein|c|carb|carbs|karbo|f|fat|lemak)\s*[:=]?\s*([0-9.,]+(?:k|rb|ribu|jt|juta)?g?)/gi;
+
+  let match: RegExpExecArray | null;
+  while ((match = pairRegex.exec(arg)) !== null) {
+    const key = match[1].toLowerCase();
+    const rawVal = match[2].toLowerCase().replace(/g$/, "");
+    if (key === "daily" || key === "day" || key === "harian" || key === "budget") {
+      const v = toAmount(rawVal);
+      if (v) patch.daily_budget = v;
+    } else if (key === "month" || key === "monthly" || key === "bulanan") {
+      const v = toAmount(rawVal);
+      if (v) patch.monthly_budget = v;
+    } else if (key === "kcal" || key === "cal" || key === "calories" || key === "kalori") {
+      const n = Number(rawVal.replace(/[.,]/g, ""));
+      if (Number.isFinite(n) && n > 0) patch.daily_calories = Math.round(n);
+    } else if (key === "p" || key === "pro" || key === "protein") {
+      const n = Number(rawVal.replace(",", "."));
+      if (Number.isFinite(n) && n > 0) patch.daily_protein_g = Math.round(n * 10) / 10;
+    } else if (key === "c" || key === "carb" || key === "carbs" || key === "karbo") {
+      const n = Number(rawVal.replace(",", "."));
+      if (Number.isFinite(n) && n > 0) patch.daily_carbs_g = Math.round(n * 10) / 10;
+    } else if (key === "f" || key === "fat" || key === "lemak") {
+      const n = Number(rawVal.replace(",", "."));
+      if (Number.isFinite(n) && n > 0) patch.daily_fat_g = Math.round(n * 10) / 10;
+    }
+  }
+
+  return {
+    patch,
+    hasUpdates: Object.keys(patch).length > 0,
   };
 }

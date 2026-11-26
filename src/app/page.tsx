@@ -1,16 +1,39 @@
-import { byCategoryAllPeriods, byDay, byHourToday, listRecent, nutritionTotals, totals } from "@/lib/db";
+import {
+  byCategoryAllPeriods,
+  byDay,
+  byHourToday,
+  getSettings,
+  listRecent,
+  nutritionByDay,
+  nutritionByHourToday,
+  nutritionTotals,
+  totals,
+} from "@/lib/db";
 import DashboardClient from "@/components/DashboardClient";
 import { CalendarIcon, LogOutIcon, WalletIcon } from "@/components/Icons";
 
 export const dynamic = "force-dynamic";
 
 export default async function Home() {
-  const [t, days30, hoursToday, catsByPeriod, nutritionByPeriod, recent] = await Promise.all([
+  const [
+    t,
+    days30,
+    hoursToday,
+    nutriDays30,
+    nutriHoursToday,
+    catsByPeriod,
+    nutritionByPeriod,
+    settings,
+    recent,
+  ] = await Promise.all([
     totals(),
     byDay(30),
     byHourToday(),
+    nutritionByDay(30),
+    nutritionByHourToday(),
     byCategoryAllPeriods(),
     nutritionTotals(),
+    getSettings(),
     listRecent(150),
   ]);
 
@@ -104,8 +127,11 @@ export default async function Home() {
         totals={t}
         days30={days30}
         hoursToday={hoursToday}
+        nutriDays30={nutriDays30}
+        nutriHoursToday={nutriHoursToday}
         catsByPeriod={catsByPeriod}
         nutritionByPeriod={nutritionByPeriod}
+        settings={settings}
         recent={recent}
         dayOfMonth={dayOfMonth}
         dayOfWeek={dayOfWeek}
