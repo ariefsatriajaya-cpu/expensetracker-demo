@@ -6,6 +6,7 @@ export type RecalcCommand = {
 };
 
 export type GoalPatch = {
+  body_weight_kg?: number;
   daily_budget?: number;
   monthly_budget?: number;
   daily_calories?: number;
@@ -125,8 +126,30 @@ export function parseRecalcCommand(text: string): RecalcCommand | null {
   };
 }
 
-export function parseSetGoalCommand(text: string): { patch: GoalPatch; hasUpdates: boolean } | null {
+export function parseSetGoalCommand(text: string): {
+  patch: GoalPatch;
+  hasUpdates: boolean;
+  autoCalcFromWeight?: "cut" | "maintain" | "gain";
+} | null {
   const trimmed = text.trim();
+  const weightOnlyMatch = trimmed.match(
+    /^\/(?:weight|berat|bb)(?:@\S+)?(?:\s+([0-9]+(?:[.,][0-9]+)?)\s*(?:kg)?)?(?:\s+(cut|cutting|maintain|maintenance|gain|bulk|bulking))?$/i,
+  );
+  if (weightOnlyMatch) {
+    const rawW = weightOnlyMatch[1];
+    if (!rawW) return { patch: {}, hasUpdates: false };
+    const w = Number(rawW.replace(",", "."));
+    if (!Number.isFinite(w) || w < 25 || w > 300) return { patch: {}, hasUpdates: false };
+    const rawMode = (weightOnlyMatch[2] ?? "maintain").toLowerCase();
+    const mode: "cut" | "maintain" | "gain" =
+      rawMode.startsWith("cut") ? "cut" : rawMode.startsWith("gain") || rawMode.startsWith("bulk") ? "gain" : "maintain";
+    return {
+      patch: { body_weight_kg: Math.round(w * 10) / 10 },
+      hasUpdates: true,
+      autoCalcFromWeight: mode,
+    };
+  }
+
   const m = trimmed.match(/^\/(?:setgoal|goal|target|targets)(?:@\S+)?(?:\s+([\s\S]+))?$/i);
   if (!m) return null;
   const arg = (m[1] ?? "").trim();
@@ -134,13 +157,16 @@ export function parseSetGoalCommand(text: string): { patch: GoalPatch; hasUpdate
 
   const patch: GoalPatch = {};
   const pairRegex =
-    /\b(daily|day|harian|budget|month|monthly|bulanan|kcal|cal|calories|kalori|p|pro|protein|c|carb|carbs|karbo|f|fat|lemak)\s*[:=]?\s*([0-9.,]+(?:k|rb|ribu|jt|juta)?g?)/gi;
+    /\b(weight|w|kg|berat|bb|daily|day|harian|budget|month|monthly|bulanan|kcal|cal|calories|kalori|p|pro|protein|c|carb|carbs|karbo|f|fat|lemak)\s*[:=]?\s*([0-9.,]+(?:k|rb|ribu|jt|juta)?(?:kg|g)?)/gi;
 
   let match: RegExpExecArray | null;
   while ((match = pairRegex.exec(arg)) !== null) {
     const key = match[1].toLowerCase();
-    const rawVal = match[2].toLowerCase().replace(/g$/, "");
-    if (key === "daily" || key === "day" || key === "harian" || key === "budget") {
+    const rawVal = match[2].toLowerCase().replace(/(?:kg|g)$/, "");
+    if (key === "weight" || key === "w" || key === "kg" || key === "berat" || key === "bb") {
+      const n = Number(rawVal.replace(",", "."));
+      if (Number.isFinite(n) && n >= 25 && n <= 300) patch.body_weight_kg = Math.round(n * 10) / 10;
+    } else if (key === "daily" || key === "day" || key === "harian" || key === "budget") {
       const v = toAmount(rawVal);
       if (v) patch.daily_budget = v;
     } else if (key === "month" || key === "monthly" || key === "bulanan") {
@@ -161,8 +187,26 @@ export function parseSetGoalCommand(text: string): { patch: GoalPatch; hasUpdate
     }
   }
 
+  const modeMatch = arg.match(/\b(cut|cutting|maintain|maintenance|gain|bulk|bulking)\b/i);
+  const explicitMacroProvided =
+    patch.daily_calories !== undefined ||
+    patch.daily_protein_g !== undefined ||
+    patch.daily_carbs_g !== undefined ||
+    patch.daily_fat_g !== undefined;
+  const autoCalcFromWeight =
+    patch.body_weight_kg !== undefined && !explicitMacroProvided
+      ? modeMatch
+        ? modeMatch[1].toLowerCase().startsWith("cut")
+          ? "cut"
+          : modeMatch[1].toLowerCase().startsWith("gain") || modeMatch[1].toLowerCase().startsWith("bulk")
+            ? "gain"
+            : "maintain"
+        : "maintain"
+      : undefined;
+
   return {
     patch,
     hasUpdates: Object.keys(patch).length > 0,
+    ...(autoCalcFromWeight ? { autoCalcFromWeight } : {}),
   };
 }

@@ -37,7 +37,10 @@ export type NutritionTrendPoint = {
   fat: number;
 };
 
+export type NutritionGoalMode = "cut" | "maintain" | "gain";
+
 export type UserSettings = {
+  body_weight_kg: number;
   daily_budget: number;
   monthly_budget: number;
   daily_calories: number;
@@ -47,6 +50,7 @@ export type UserSettings = {
 };
 
 export const DEFAULT_SETTINGS: UserSettings = {
+  body_weight_kg: 65,
   daily_budget: 100_000,
   monthly_budget: 3_000_000,
   daily_calories: 2000,
@@ -54,6 +58,51 @@ export const DEFAULT_SETTINGS: UserSettings = {
   daily_carbs_g: 225,
   daily_fat_g: 65,
 };
+
+/**
+ * Calculates daily calorie & macro targets scaled to the user's actual body weight (kg).
+ * - Cutting / Fat Loss: ~26 kcal/kg | Protein 2.0 g/kg | Fat 0.8 g/kg | Carbs remaining kcal
+ * - Balanced Maintenance: ~31 kcal/kg | Protein 1.8 g/kg | Fat 0.9 g/kg | Carbs remaining kcal
+ * - Active / Muscle Gain: ~36 kcal/kg | Protein 2.0 g/kg | Fat 1.0 g/kg | Carbs remaining kcal
+ */
+export function calculateNutritionForWeight(
+  weightKg: number,
+  mode: NutritionGoalMode = "maintain",
+): {
+  daily_calories: number;
+  daily_protein_g: number;
+  daily_carbs_g: number;
+  daily_fat_g: number;
+  kcalPerKg: number;
+  proteinPerKg: number;
+  fatPerKg: number;
+} {
+  const w = Math.max(30, Math.min(250, Number(weightKg) || DEFAULT_SETTINGS.body_weight_kg));
+  const specs: Record<
+    NutritionGoalMode,
+    { kcalPerKg: number; proteinPerKg: number; fatPerKg: number }
+  > = {
+    cut: { kcalPerKg: 26, proteinPerKg: 2.0, fatPerKg: 0.8 },
+    maintain: { kcalPerKg: 31, proteinPerKg: 1.8, fatPerKg: 0.9 },
+    gain: { kcalPerKg: 36, proteinPerKg: 2.0, fatPerKg: 1.0 },
+  };
+  const { kcalPerKg, proteinPerKg, fatPerKg } = specs[mode];
+  const daily_calories = Math.round((w * kcalPerKg) / 10) * 10;
+  const daily_protein_g = Math.round(w * proteinPerKg);
+  const daily_fat_g = Math.round(w * fatPerKg);
+  const remainingKcal = Math.max(200, daily_calories - daily_protein_g * 4 - daily_fat_g * 9);
+  const daily_carbs_g = Math.round(remainingKcal / 4);
+
+  return {
+    daily_calories,
+    daily_protein_g,
+    daily_carbs_g,
+    daily_fat_g,
+    kcalPerKg,
+    proteinPerKg,
+    fatPerKg,
+  };
+}
 
 const TZ = "Asia/Jakarta";
 let initPromise: Promise<unknown> | null = null;
@@ -80,6 +129,7 @@ function init() {
       ADD COLUMN IF NOT EXISTS nutrition_note text`;
     await db`CREATE TABLE IF NOT EXISTS user_settings (
       id integer PRIMARY KEY DEFAULT 1,
+      body_weight_kg numeric(5,1) NOT NULL DEFAULT 65,
       daily_budget bigint NOT NULL DEFAULT 100000,
       monthly_budget bigint NOT NULL DEFAULT 3000000,
       daily_calories integer NOT NULL DEFAULT 2000,
@@ -87,6 +137,8 @@ function init() {
       daily_carbs_g numeric(6,1) NOT NULL DEFAULT 225,
       daily_fat_g numeric(6,1) NOT NULL DEFAULT 65
     )`;
+    await db`ALTER TABLE user_settings
+      ADD COLUMN IF NOT EXISTS body_weight_kg numeric(5,1) NOT NULL DEFAULT 65`;
     await db`INSERT INTO user_settings (id) VALUES (1) ON CONFLICT (id) DO NOTHING`;
   })().catch((e) => {
     initPromise = null;
@@ -122,6 +174,7 @@ export async function getSettings(): Promise<UserSettings> {
   const r = await sql()`SELECT * FROM user_settings WHERE id = 1 LIMIT 1`;
   if (!r[0]) return DEFAULT_SETTINGS;
   return {
+    body_weight_kg: Number(r[0].body_weight_kg ?? DEFAULT_SETTINGS.body_weight_kg),
     daily_budget: Number(r[0].daily_budget ?? DEFAULT_SETTINGS.daily_budget),
     monthly_budget: Number(r[0].monthly_budget ?? DEFAULT_SETTINGS.monthly_budget),
     daily_calories: Number(r[0].daily_calories ?? DEFAULT_SETTINGS.daily_calories),
@@ -134,6 +187,10 @@ export async function getSettings(): Promise<UserSettings> {
 export async function updateSettings(patch: Partial<UserSettings>): Promise<UserSettings> {
   const cur = await getSettings();
   const next: UserSettings = {
+    body_weight_kg:
+      patch.body_weight_kg && patch.body_weight_kg >= 25 && patch.body_weight_kg <= 300
+        ? Math.round(patch.body_weight_kg * 10) / 10
+        : cur.body_weight_kg,
     daily_budget: patch.daily_budget && patch.daily_budget > 0 ? Math.round(patch.daily_budget) : cur.daily_budget,
     monthly_budget:
       patch.monthly_budget && patch.monthly_budget > 0 ? Math.round(patch.monthly_budget) : cur.monthly_budget,
@@ -151,7 +208,8 @@ export async function updateSettings(patch: Partial<UserSettings>): Promise<User
       patch.daily_fat_g && patch.daily_fat_g > 0 ? Math.round(patch.daily_fat_g * 10) / 10 : cur.daily_fat_g,
   };
   await sql()`UPDATE user_settings
-    SET daily_budget = ${next.daily_budget},
+    SET body_weight_kg = ${next.body_weight_kg},
+        daily_budget = ${next.daily_budget},
         monthly_budget = ${next.monthly_budget},
         daily_calories = ${next.daily_calories},
         daily_protein_g = ${next.daily_protein_g},

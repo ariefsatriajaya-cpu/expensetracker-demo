@@ -193,6 +193,17 @@ export function ArrowLeftIcon(props: IconProps) {
   );
 }
 
+export function ScaleIcon(props: IconProps) {
+  return (
+    <svg {...base} {...props}>
+      <path d="M16 16v1a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h2" />
+      <rect x="8" y="3" width="14" height="14" rx="2" />
+      <path d="M15 7a3 3 0 0 0-3 3h6a3 3 0 0 0-3-3Z" />
+      <path d="m15 10 1.5-1.5" />
+    </svg>
+  );
+}
+
 export const CATEGORY_META: Record<string, { color: string; fg: string; bg: string }> = {
   Food: { color: "#10b981", fg: "var(--cat-food-fg)", bg: "var(--cat-food-bg)" },
   Drink: { color: "#06b6d4", fg: "var(--cat-drink-fg)", bg: "var(--cat-drink-bg)" },

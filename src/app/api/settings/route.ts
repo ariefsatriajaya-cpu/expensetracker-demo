@@ -12,12 +12,13 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: "invalid body" }, { status: 400 });
   }
   const settings = await updateSettings({
-    daily_budget: Number(b.daily_budget),
-    monthly_budget: Number(b.monthly_budget),
-    daily_calories: Number(b.daily_calories),
-    daily_protein_g: Number(b.daily_protein_g),
-    daily_carbs_g: Number(b.daily_carbs_g),
-    daily_fat_g: Number(b.daily_fat_g),
+    body_weight_kg: b.body_weight_kg !== undefined ? Number(b.body_weight_kg) : undefined,
+    daily_budget: b.daily_budget !== undefined ? Number(b.daily_budget) : undefined,
+    monthly_budget: b.monthly_budget !== undefined ? Number(b.monthly_budget) : undefined,
+    daily_calories: b.daily_calories !== undefined ? Number(b.daily_calories) : undefined,
+    daily_protein_g: b.daily_protein_g !== undefined ? Number(b.daily_protein_g) : undefined,
+    daily_carbs_g: b.daily_carbs_g !== undefined ? Number(b.daily_carbs_g) : undefined,
+    daily_fat_g: b.daily_fat_g !== undefined ? Number(b.daily_fat_g) : undefined,
   });
   return NextResponse.json({ ok: true, settings });
 }

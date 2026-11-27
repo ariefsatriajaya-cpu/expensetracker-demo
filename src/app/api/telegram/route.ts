@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
   addExpense,
+  calculateNutritionForWeight,
   getExpenseById,
   getSettings,
   listRecent,
@@ -136,14 +137,27 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true, reason: "photo_download_failed" });
     }
 
-    // 1. Handle /setgoal (/goal, /target)
+    // 1. Handle /setgoal (/goal, /target, /weight)
     const goalCmd = rawText ? parseSetGoalCommand(rawText) : null;
     if (goalCmd !== null) {
-      const s = goalCmd.hasUpdates ? await updateSettings(goalCmd.patch) : await getSettings();
-      const header = goalCmd.hasUpdates ? "✅ Updated your targets:" : "🎯 Current Budget & Nutrition Targets:";
+      const finalPatch = { ...goalCmd.patch };
+      if (goalCmd.autoCalcFromWeight && finalPatch.body_weight_kg) {
+        const calc = calculateNutritionForWeight(finalPatch.body_weight_kg, goalCmd.autoCalcFromWeight);
+        finalPatch.daily_calories = calc.daily_calories;
+        finalPatch.daily_protein_g = calc.daily_protein_g;
+        finalPatch.daily_carbs_g = calc.daily_carbs_g;
+        finalPatch.daily_fat_g = calc.daily_fat_g;
+      }
+      const s = goalCmd.hasUpdates ? await updateSettings(finalPatch) : await getSettings();
+      const proPerKg = s.body_weight_kg > 0 ? (s.daily_protein_g / s.body_weight_kg).toFixed(1) : "1.8";
+      const header = goalCmd.hasUpdates
+        ? goalCmd.autoCalcFromWeight
+          ? `✅ Updated weight to ${s.body_weight_kg} kg & auto-calculated nutrition needs (${goalCmd.autoCalcFromWeight}):`
+          : "✅ Updated your targets:"
+        : "🎯 Current Weight, Budget & Nutrition Targets:";
       sent = await sendMessage(
         chat,
-        `${header}\n• Daily Budget: ${rp(s.daily_budget)}\n• Monthly Budget: ${rp(s.monthly_budget)}\n• Daily Calories: ${s.daily_calories} kcal\n• Protein: ${s.daily_protein_g}g · Carbs: ${s.daily_carbs_g}g · Fat: ${s.daily_fat_g}g\n\n💡 Update anytime with:\n/setgoal daily 120k month 3.5jt kcal 2100 p 130 c 230 f 65`,
+        `${header}\n• Body Weight: ${s.body_weight_kg} kg\n• Daily Calories: ${s.daily_calories} kcal (${Math.round(s.daily_calories / Math.max(1, s.body_weight_kg))} kcal/kg)\n• Protein: ${s.daily_protein_g}g (${proPerKg}g/kg) · Carbs: ${s.daily_carbs_g}g · Fat: ${s.daily_fat_g}g\n• Daily Budget: ${rp(s.daily_budget)} · Monthly Budget: ${rp(s.monthly_budget)}\n\n💡 Update anytime with:\n• /weight 70 (or /weight 70 cut / maintain / gain)\n• /setgoal weight 70 daily 120k month 3.5jt kcal 2100 p 130 c 230 f 65`,
       );
       return NextResponse.json({ ok: true, reason: sent ? "sent" : "telegram_api_failed" });
     }

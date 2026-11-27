@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { CATEGORIES } from "@/lib/categorize";
@@ -15,8 +14,8 @@ import {
   FlameIcon,
   PieChartIcon,
   PlusIcon,
+  ScaleIcon,
   SendIcon,
-  SettingsIcon,
   SparklesIcon,
   TargetIcon,
   TrendingUpIcon,
@@ -24,12 +23,14 @@ import {
 } from "@/components/Icons";
 import RecentList from "@/components/RecentList";
 import { rp } from "@/lib/format";
-import type {
-  Expense,
-  NutritionTrendPoint,
-  Period,
-  PeriodNutrition,
-  UserSettings,
+import {
+  calculateNutritionForWeight,
+  type Expense,
+  type NutritionGoalMode,
+  type NutritionTrendPoint,
+  type Period,
+  type PeriodNutrition,
+  type UserSettings,
 } from "@/lib/db";
 
 type Props = {
@@ -84,6 +85,40 @@ export default function DashboardClient({
     extraNotes: "",
     autoAi: true,
   });
+
+  // Quick Body Weight & Nutrition Needs Calculator Drawer State
+  const [showWeightCalc, setShowWeightCalc] = useState(false);
+  const [weightInput, setWeightInput] = useState(String(settings.body_weight_kg ?? 65));
+  const [weightMode, setWeightMode] = useState<NutritionGoalMode>("maintain");
+  const [savingWeight, setSavingWeight] = useState(false);
+
+  const parsedWeight = Number(weightInput) || settings.body_weight_kg || 65;
+  const weightNeeds = calculateNutritionForWeight(parsedWeight, weightMode);
+
+  async function handleSaveWeightNeeds(ev: React.FormEvent) {
+    ev.preventDefault();
+    if (parsedWeight < 25 || parsedWeight > 300) return;
+    setSavingWeight(true);
+    try {
+      const res = await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          body_weight_kg: Math.round(parsedWeight * 10) / 10,
+          daily_calories: weightNeeds.daily_calories,
+          daily_protein_g: weightNeeds.daily_protein_g,
+          daily_carbs_g: weightNeeds.daily_carbs_g,
+          daily_fat_g: weightNeeds.daily_fat_g,
+        }),
+      });
+      if (res.ok) {
+        setShowWeightCalc(false);
+        router.refresh();
+      }
+    } finally {
+      setSavingWeight(false);
+    }
+  }
 
   async function handleAddExpense(ev: React.FormEvent) {
     ev.preventDefault();
@@ -229,7 +264,10 @@ export default function DashboardClient({
           <button
             type="button"
             aria-expanded={showAdd}
-            onClick={() => setShowAdd(!showAdd)}
+            onClick={() => {
+              setShowAdd(!showAdd);
+              setShowWeightCalc(false);
+            }}
             className="focus-ring inline-flex min-h-10 flex-1 items-center justify-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-semibold whitespace-nowrap transition-opacity active:opacity-85 sm:flex-initial sm:text-sm"
             style={{
               background: "var(--accent-primary)",
@@ -240,20 +278,214 @@ export default function DashboardClient({
             <span>Add Expense</span>
           </button>
 
-          <Link
-            href="/settings"
-            className="focus-ring inline-flex min-h-10 flex-1 items-center justify-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-semibold whitespace-nowrap transition-colors active:opacity-85 sm:flex-initial sm:text-sm"
+          <form
+            onSubmit={handleSaveWeightNeeds}
+            className="flex flex-1 items-center gap-1.5 rounded-xl px-2.5 py-1 sm:flex-initial"
             style={{
               background: "var(--surface-subtle)",
-              border: "1px solid var(--border-subtle)",
-              color: "var(--text-primary)",
+              border: `1px solid ${showWeightCalc ? "var(--accent-primary)" : "var(--border-subtle)"}`,
             }}
           >
-            <SettingsIcon className="h-4 w-4 shrink-0" />
-            <span>Targets &amp; Quotas</span>
-          </Link>
+            <button
+              type="button"
+              aria-expanded={showWeightCalc}
+              aria-label="Toggle weight nutrition calculator options"
+              onClick={() => {
+                setShowWeightCalc(!showWeightCalc);
+                setShowAdd(false);
+              }}
+              className="focus-ring flex items-center gap-1 rounded-lg px-1 py-1 text-xs font-semibold whitespace-nowrap"
+              style={{ color: "var(--text-secondary)" }}
+            >
+              <ScaleIcon className="h-4 w-4 shrink-0" style={{ color: "var(--accent-primary)" }} />
+              <span>Weight:</span>
+            </button>
+
+            <label htmlFor="quick-bar-weight" className="sr-only">
+              Body weight in kg
+            </label>
+            <input
+              id="quick-bar-weight"
+              type="number"
+              inputMode="decimal"
+              step="0.1"
+              min={25}
+              max={300}
+              required
+              value={weightInput}
+              onFocus={() => {
+                setShowWeightCalc(true);
+                setShowAdd(false);
+              }}
+              onChange={(e) => setWeightInput(e.target.value)}
+              className="focus-ring h-8 w-16 rounded-lg px-2 text-center font-mono text-xs font-bold tabular-nums sm:text-sm"
+              style={{
+                background: "var(--surface-elevated)",
+                border: "1px solid var(--border-strong)",
+                color: "var(--text-primary)",
+              }}
+            />
+            <span className="font-mono text-xs font-medium" style={{ color: "var(--text-secondary)" }}>
+              kg
+            </span>
+
+            <button
+              type="submit"
+              disabled={savingWeight}
+              className="focus-ring ml-0.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold whitespace-nowrap transition-opacity active:opacity-85 disabled:opacity-50"
+              style={{
+                background: "var(--accent-primary)",
+                color: "var(--accent-on-primary)",
+              }}
+            >
+              {savingWeight ? "..." : "Update"}
+            </button>
+          </form>
         </div>
       </section>
+
+      {/* Expandable Body Weight -> Actual Nutrition Needs Calculator */}
+      {showWeightCalc && (
+        <section className="glass-card rounded-2xl p-5" style={{ borderColor: "var(--accent-primary)" }}>
+          <div className="mb-4 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2.5">
+              <span
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl"
+                style={{ background: "var(--accent-soft)", color: "var(--accent-primary)" }}
+              >
+                <ScaleIcon className="h-4 w-4" />
+              </span>
+              <div>
+                <h2 className="text-base font-bold">Actual Nutrition Needs for Your Weight</h2>
+                <p className="text-xs" style={{ color: "var(--text-secondary)" }}>
+                  Enter your current body weight (kg) to calculate and apply your daily calorie &amp; macro requirements
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowWeightCalc(false)}
+              aria-label="Close weight calculator"
+              className="focus-ring flex h-9 w-9 items-center justify-center rounded-lg"
+              style={{ color: "var(--text-secondary)" }}
+            >
+              <XIcon className="h-4 w-4" />
+            </button>
+          </div>
+
+          <form onSubmit={handleSaveWeightNeeds} className="space-y-4">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-12">
+              <div className="sm:col-span-4">
+                <label
+                  htmlFor="dash-weight-kg"
+                  className="block text-xs font-semibold uppercase tracking-wide"
+                  style={{ color: "var(--text-secondary)" }}
+                >
+                  Your Weight (kg)
+                </label>
+                <div className="relative mt-1 flex items-center">
+                  <input
+                    id="dash-weight-kg"
+                    type="number"
+                    inputMode="decimal"
+                    step="0.1"
+                    min={25}
+                    max={300}
+                    required
+                    value={weightInput}
+                    onChange={(e) => setWeightInput(e.target.value)}
+                    className="focus-ring min-h-11 w-full rounded-xl py-2.5 pr-11 pl-3.5 font-mono text-base font-bold tabular-nums"
+                    style={{
+                      background: "var(--surface-subtle)",
+                      border: "1px solid var(--border-strong)",
+                      color: "var(--text-primary)",
+                    }}
+                  />
+                  <span
+                    className="pointer-events-none absolute right-3.5 font-mono text-xs font-semibold"
+                    style={{ color: "var(--text-secondary)" }}
+                  >
+                    kg
+                  </span>
+                </div>
+              </div>
+
+              <div className="sm:col-span-8">
+                <span
+                  className="block text-xs font-semibold uppercase tracking-wide"
+                  style={{ color: "var(--text-secondary)" }}
+                >
+                  Activity &amp; Goal Mode
+                </span>
+                <div className="mt-1 grid grid-cols-3 gap-2" role="group" aria-label="Goal mode">
+                  {(
+                    [
+                      { id: "cut", label: "Fat Loss", sub: "2.0g/kg P" },
+                      { id: "maintain", label: "Maintain", sub: "1.8g/kg P" },
+                      { id: "gain", label: "Muscle Gain", sub: "2.0g/kg P" },
+                    ] as const
+                  ).map((m) => {
+                    const active = weightMode === m.id;
+                    return (
+                      <button
+                        key={m.id}
+                        type="button"
+                        aria-pressed={active}
+                        onClick={() => setWeightMode(m.id)}
+                        className="focus-ring min-h-11 rounded-xl px-2.5 py-2 text-center transition-all"
+                        style={{
+                          background: active ? "var(--accent-soft)" : "var(--surface-subtle)",
+                          border: `1px solid ${active ? "var(--accent-primary)" : "var(--border-subtle)"}`,
+                          color: active ? "var(--accent-text)" : "var(--text-primary)",
+                        }}
+                      >
+                        <p className="text-xs font-bold">{m.label}</p>
+                        <p className="font-mono text-[11px]" style={{ color: "var(--text-secondary)" }}>
+                          {m.sub}
+                        </p>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+
+            <div
+              className="flex flex-wrap items-center justify-between gap-3 rounded-xl px-4 py-3 text-xs sm:text-sm"
+              style={{
+                background: "var(--surface-subtle)",
+                border: "1px solid var(--border-subtle)",
+              }}
+            >
+              <div className="space-y-0.5">
+                <p className="font-semibold" style={{ color: "var(--text-primary)" }}>
+                  Calculated Daily Needs for {parsedWeight} kg:
+                </p>
+                <p className="font-mono text-xs tabular-nums" style={{ color: "var(--text-secondary)" }}>
+                  🔥 <strong style={{ color: "var(--text-primary)" }}>{weightNeeds.daily_calories} kcal/day</strong> (
+                  {weightNeeds.kcalPerKg} kcal/kg) · 🥩 Protein{" "}
+                  <strong style={{ color: "var(--cat-food-fg)" }}>{weightNeeds.daily_protein_g}g</strong> · 🍚 Carbs{" "}
+                  <strong style={{ color: "var(--cat-transport-fg)" }}>{weightNeeds.daily_carbs_g}g</strong> · 🥑 Fat{" "}
+                  <strong style={{ color: "var(--cat-groceries-fg)" }}>{weightNeeds.daily_fat_g}g</strong>
+                </p>
+              </div>
+
+              <button
+                type="submit"
+                disabled={savingWeight}
+                className="focus-ring inline-flex min-h-10 items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-semibold whitespace-nowrap disabled:opacity-50 sm:text-sm"
+                style={{
+                  background: "var(--accent-primary)",
+                  color: "var(--accent-on-primary)",
+                }}
+              >
+                <CheckIcon className="h-4 w-4" />
+                <span>{savingWeight ? "Applying..." : "Apply to My Daily Goals"}</span>
+              </button>
+            </div>
+          </form>
+        </section>
+      )}
 
       {/* Expandable "+ Add Expense" Form with AI Nutrition */}
       {showAdd && (
@@ -562,7 +794,7 @@ export default function DashboardClient({
               className="rounded-md px-1.5 py-0.5 whitespace-nowrap"
               style={{ background: "var(--surface-subtle)", color: "var(--text-primary)" }}
             >
-              P {activeNutri.protein}g
+              P {activeNutri.protein}g / {Math.round(settings.daily_protein_g * daysMultiplier)}g
             </span>
             <span
               className="rounded-md px-1.5 py-0.5 whitespace-nowrap"
@@ -575,6 +807,12 @@ export default function DashboardClient({
               style={{ background: "var(--surface-subtle)", color: "var(--text-primary)" }}
             >
               F {activeNutri.fat}g
+            </span>
+            <span
+              className="rounded-md px-1.5 py-0.5 whitespace-nowrap"
+              style={{ background: "var(--accent-soft)", color: "var(--accent-text)" }}
+            >
+              {settings.body_weight_kg} kg
             </span>
           </div>
         </div>

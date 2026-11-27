@@ -11,6 +11,7 @@ import {
 import { categorize } from "./categorize";
 import { signSession, verifySession } from "./session";
 import { formatNutritionBlock } from "./nutrition";
+import { calculateNutritionForWeight } from "./db";
 
 describe("parseExpense & parseMultipleExpenses", () => {
   it.each([
@@ -63,7 +64,7 @@ describe("Telegram AI & Goal commands", () => {
     });
   });
 
-  it("parses /setgoal commands", () => {
+  it("parses /setgoal and /weight commands", () => {
     expect(parseSetGoalCommand("/setgoal daily 120k month 3.5jt kcal 2100 p 130 c 230 f 65")).toEqual({
       patch: {
         daily_budget: 120000,
@@ -75,7 +76,29 @@ describe("Telegram AI & Goal commands", () => {
       },
       hasUpdates: true,
     });
+    expect(parseSetGoalCommand("/weight 72.5 cut")).toEqual({
+      patch: { body_weight_kg: 72.5 },
+      hasUpdates: true,
+      autoCalcFromWeight: "cut",
+    });
+    expect(parseSetGoalCommand("/setgoal weight 70kg daily 100k")).toEqual({
+      patch: { body_weight_kg: 70, daily_budget: 100000 },
+      hasUpdates: true,
+      autoCalcFromWeight: "maintain",
+    });
     expect(parseSetGoalCommand("/setgoal")).toEqual({ patch: {}, hasUpdates: false });
+  });
+
+  it("calculates personalized daily nutrition needs from body weight", () => {
+    const m70 = calculateNutritionForWeight(70, "maintain");
+    expect(m70.daily_calories).toBe(2170);
+    expect(m70.daily_protein_g).toBe(126);
+    expect(m70.daily_fat_g).toBe(63);
+    expect(m70.daily_carbs_g).toBeGreaterThan(200);
+
+    const cut80 = calculateNutritionForWeight(80, "cut");
+    expect(cut80.daily_calories).toBe(2080);
+    expect(cut80.daily_protein_g).toBe(160);
   });
 
   it("parses /ask commands", () => {

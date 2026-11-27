@@ -420,8 +420,9 @@ export async function askFinancialNutritionCoach(input: {
 Answer the user's question directly using their real data below. Keep the answer under 140 words, friendly, and actionable.
 
 USER TARGETS:
+- Body Weight: ${input.settings.body_weight_kg} kg
 - Daily Budget: ${rp(input.settings.daily_budget)} | Monthly Budget: ${rp(input.settings.monthly_budget)}
-- Daily Nutrition Target: ${input.settings.daily_calories} kcal | Protein ${input.settings.daily_protein_g}g | Carbs ${input.settings.daily_carbs_g}g | Fat ${input.settings.daily_fat_g}g
+- Daily Nutrition Target: ${input.settings.daily_calories} kcal | Protein ${input.settings.daily_protein_g}g (${(input.settings.daily_protein_g / Math.max(1, input.settings.body_weight_kg)).toFixed(1)}g/kg) | Carbs ${input.settings.daily_carbs_g}g | Fat ${input.settings.daily_fat_g}g
 
 CURRENT STATUS (Asia/Jakarta):
 - Today Spending: ${rp(input.totals.today)} (Remaining today: ${rp(remDailyRp)})
